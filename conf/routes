@@ -1,0 +1,20 @@
+# Routes
+# This file defines all application routes (Higher priority routes first)
+# ~~~~
+
+GET         /sign-cla                      controllers.Application.signCla
+POST        /sign-cla                      controllers.Application.submitCla
+
+GET         /signed-cla                    controllers.Application.signedCla
+
+
+# OAuth
+GET         /_github_oauth_callback        controllers.Application.githubOauthCallback(code: String)
+
+
+# Map static resources from the /public folder to the /assets URL path
+GET        /assets/*file                   controllers.Assets.versioned(path="/public", file: Asset)
+
+
+# WebJars
+GET        /webjars/*file                  controllers.WebJarAssets.at(file)

@@ -1,0 +1,138 @@
+@(version: String, authUrl: String, maybeGitHubAuthInfo: Option[GitHubAuthInfo], claVersion: String, claText: String)
+
+@main("Sign the Salesforce CLA") {
+
+    <h2 class="slds-text-heading--large" style="margin-bottom: 20px;">Sign the Salesforce Contributor License Agreement (CLA)</h2>
+
+    <ul class="slds-timeline slds-container--left">
+        <li class="slds-timeline__item">
+            <span class="slds-assistive-text">Login to GitHub</span>
+            <div class="slds-media slds-media--reverse">
+                <div class="slds-media__body">
+                    <div class="slds-media slds-media--timeline slds-timeline__media--task">
+                        <div class="slds-media__figure">
+                            <svg aria-hidden="true" class="slds-icon slds-icon-standard-task slds-timeline__icon"></svg>
+                            <span class="octicon octicon-mark-github"></span>
+                        </div>
+                        <div class="slds-media__body">
+                            <div class="slds-media slds-tile slds-media--small">
+                                <div class="slds-media__figure">
+                                    <label class="slds-checkbox" for="mark-complete">
+                                        <input id="gitHubAuthed" name="checkbox" type="checkbox" @maybeGitHubAuthInfo.map(_ => "checked")/>
+                                        <span class="slds-checkbox--faux"></span>
+                                        <span class="slds-form-element__label slds-assistive-text">Login to GitHub</span>
+                                    </label>
+                                </div>
+                                <div class="slds-media__body">
+                                    <p class="slds-tile__title slds-truncate">Authenticate with GitHub so we can associate your commits with your signed CLA</p>
+                                    <p class="slds-tile__detail">
+                                        @maybeGitHubAuthInfo.fold {
+                                            <a href="@authUrl" class="slds-button slds-button--brand">Login to GitHub</a>
+                                        } { gitHubAuthInfo =>
+                                            Logged in as: @gitHubAuthInfo.userName
+                                        }
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </li>
+        <li class="slds-timeline__item">
+            <span class="slds-assistive-text">Review the CLA</span>
+            <div class="slds-media slds-media--reverse">
+                <div class="slds-media__body">
+                    <div class="slds-media slds-media--timeline slds-timeline__media--event">
+                        <div class="slds-media__figure">
+                            <svg aria-hidden="true" class="slds-icon slds-icon-standard-event slds-timeline__icon">
+                                <use xlink:href="@StaticWebJarAssets.locateUrl("/assets/icons/custom-sprite/svg/symbols.svg")#custom16"></use>
+                            </svg>
+                        </div>
+                        <div class="slds-media__body">
+                            <div class="slds-media slds-tile slds-media--small">
+                                <div class="slds-media__figure">
+                                    <label class="slds-checkbox" for="mark-complete">
+                                        <input id="claTextViewed" name="checkbox" type="checkbox"/>
+                                        <span class="slds-checkbox--faux"></span>
+                                        <span class="slds-form-element__label slds-assistive-text">Review the CLA</span>
+                                    </label>
+                                </div>
+                                <div class="slds-media__body">
+                                    <p class="slds-tile__title slds-truncate">Review the CLA</p>
+                                    <pre id="claText"><code>@claText</code></pre>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </li>
+        <li class="slds-timeline__item">
+            <span class="slds-assistive-text">Call</span>
+            <div class="slds-media slds-media--reverse">
+                <div class="slds-media__body">
+                    <div class="slds-media slds-media--timeline slds-timeline__media--call">
+                        <div class="slds-media__figure">
+                            <svg aria-hidden="true" class="slds-icon slds-icon-action-update-status slds-timeline__icon" style="padding: 3px;">
+                                <use xlink:href="@StaticWebJarAssets.locateUrl("/assets/icons/action-sprite/svg/symbols.svg")#update_status"></use>
+                            </svg>
+                        </div>
+                        <div class="slds-media__body">
+                            <div class="slds-media slds-tile slds-media--small">
+                                <div class="slds-media__body">
+                                    <p class="slds-tile__title slds-truncate">Sign the CLA</p>
+                                    @maybeGitHubAuthInfo.fold {
+                                        <div class="slds-tile__detail">
+                                            <a href="@authUrl" class="slds-button slds-button--brand">Login via GitHub to sign the CLA</a>
+                                        </div>
+                                    } { gitHubAuthInfo =>
+                                        <form id="agree-form" action="@routes.Application.submitCla()" method="post" class="slds-tile__detail slds-form--stacked">
+                                            <input type="hidden" name="encGitHubToken" value="@gitHubAuthInfo.encAuthToken"/>
+                                            <input type="hidden" name="claVersion" value="@claVersion"/>
+                                            <div class="slds-form-element slds-is-required">
+                                                <input id="fullName" name="fullName" class="slds-input slds-size--1-of-2" type="text" placeholder="Full Name" value="@gitHubAuthInfo.maybeFullName.getOrElse("")" required/>
+                                            </div>
+                                            <div class="slds-form-element slds-is-required">
+                                                <input id="email" name="email" class="slds-input slds-size--1-of-2" type="email" placeholder="Email" value="@gitHubAuthInfo.maybeEmail.getOrElse("")" required/>
+                                            </div>
+                                            <div class="slds-form-element">
+                                                <label class="slds-checkbox" for="agree-to-cla">
+                                                    <input id="agree-to-cla" name="agreeToCLA" type="checkbox" required/>
+                                                    <span class="slds-checkbox--faux"></span>
+                                                    <span class="slds-form-element__label">I agree to the terms of the above CLA</span>
+                                                </label>
+                                            </div>
+                                            <div class="slds-form-element">
+                                                <button id="signButton" class="slds-button slds-button--brand" type="submit" disabled>Sign the CLA</button>
+                                            </div>
+                                        </form>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </li>
+    </ul>
+
+
+    <script>
+        // check the "Review the CLA" checkbox when the user scrolls to the bottom of the CLA
+        var wrapper = document.getElementById('claText');
+        wrapper.onscroll = function(event) {
+            if (wrapper.scrollTop + window.innerHeight >= wrapper.scrollHeight) {
+                document.getElementById('claTextViewed').checked = true;
+            }
+        };
+
+        // enable the form when the user clicks the agree checkbox
+        if (document.getElementById('agree-form') != null) {
+            document.getElementById('agree-to-cla').addEventListener('change', function(event) {
+                document.getElementById('signButton').disabled = !event.target.checked;
+            });
+        }
+    </script>
+
+}
