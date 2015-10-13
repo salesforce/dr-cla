@@ -83,6 +83,50 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
     Ok(views.html.claSigned())
   }
 
+  def webhookPullRequest = Action.async(parse.json) { request =>
+    // todo: maybe filter on "action" = "opened", "reopened”, or “synchronize”
+    val ownerRepo = (request.body \ "pull_request" \ "base" \ "repo" \ "full_name").as[String]
+    val prNumber = (request.body \ "number").as[Int]
+
+    val sha = (request.body \ "pull_request" \ "head" \ "sha").as[String]
+
+    // update the PR status to pending
+    val prPendingFuture = gitHub.createStatus(ownerRepo, sha, "pending", routes.Application.signCla().absoluteURL()(request), "The CLA verifier is running", "salesforce-cla", gitHub.integrationToken)
+
+    val prCommitsFuture = gitHub.pullRequestCommits(ownerRepo, prNumber, gitHub.integrationToken)
+
+    val prCommittersFuture = prCommitsFuture.map { commits =>
+      commits.value.map(_.\("committer").\("login").as[String])
+    }
+
+    val internalCommittersFuture = gitHub.collaborators(ownerRepo, gitHub.integrationToken).map(_.value.map(_.\("login").as[String]))
+
+    val externalCommittersFuture = for {
+      _ <- prPendingFuture
+      prCommitters <- prCommittersFuture
+      internalCommitters <- internalCommittersFuture
+    } yield prCommitters.filterNot(internalCommitters.contains).toSet
+
+    val committersWithoutClasFuture = for {
+      externalCommitters <- externalCommittersFuture
+      clasForCommitters <- db.query(GetClaSignatures(externalCommitters))
+    } yield {
+      // todo: maybe check latest CLA version
+      externalCommitters.filterNot(clasForCommitters.map(_.githubId).contains)
+    }
+
+    committersWithoutClasFuture.flatMap { committersWithoutClas =>
+      val state = if (committersWithoutClas.isEmpty) "success" else "failure"
+      val description = if (committersWithoutClas.isEmpty) "All contributors have signed the CLA" else "One or more contributors need to sign the CLA"
+
+      // todo: when clas are needed, comment on the PR and mention the users
+
+      gitHub.createStatus(ownerRepo, sha, state, routes.Application.signCla().absoluteURL()(request), description, "salesforce-cla", gitHub.integrationToken).map { _ =>
+        Ok
+      }
+    }
+  }
+
   private def authUrl(implicit request: RequestHeader, scopes: Seq[String]): String = {
     s"https://github.com/login/oauth/authorize?client_id=${gitHub.clientId}&redirect_uri=$redirectUri&scope=${scopes.mkString(",")}"
   }

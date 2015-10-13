@@ -27,45 +27,58 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
 
   val gitHub = new GitHub()(app, ExecutionContext.global)
 
-  val clientId = app.configuration.getString("github.oauth.client-id").get
-  val clientSecret = app.configuration.getString("github.oauth.client-secret").get
-
-  val gitHubUsername = sys.env("GITHUB_USERNAME")
-  val gitHubPassword = sys.env("GITHUB_PASSWORD")
-
-  val accessToken = await {
-    WS.url("https://api.gitHub.com/authorizations")
-      .withAuth(gitHubUsername, gitHubPassword, WSAuthScheme.BASIC)
-      .post {
-        Json.obj(
-          "scopes" -> JsArray(Seq(JsString("public_repo"))),
-          "client_id" -> JsString(clientId),
-          "client_secret" -> JsString(clientSecret)
-        )
-      } map { response =>
-        (response.json \ "token").as[String]
-      }
-  }
-
-  "Github.allRepos" must {
+  "GitHub.allRepos" must {
     "fetch all the repos with 7 pages" in {
-      val repos = await(gitHub.allRepos("user/repos", accessToken, 1))
+      val repos = await(gitHub.userRepos("jamesward-test", gitHub.integrationToken, 1))
       repos.value.length must equal (7)
     }
     "fetch all the repos without paging" in {
-      val repos = await(gitHub.allRepos("user/repos", accessToken, 7))
+      val repos = await(gitHub.userRepos("jamesward-test", gitHub.integrationToken, 7))
       repos.value.length must equal (7)
     }
     "fetch all the repos with 2 pages" in {
-      val repos = await(gitHub.allRepos("user/repos", accessToken, 4))
+      val repos = await(gitHub.userRepos("jamesward-test", gitHub.integrationToken, 4))
       repos.value.length must equal (7)
     }
   }
 
-  "Github.userInfo" must {
+  "GitHub.userInfo" must {
     "fetch the userInfo" in {
-      val userInfo = await(gitHub.userInfo(accessToken))
-      (userInfo \ "login").as[String] must equal ("jamesward-test")
+      val userInfo = await(gitHub.userInfo(gitHub.integrationToken))
+      (userInfo \ "login").asOpt[String] mustBe 'defined
+    }
+  }
+
+  "GitHub.getPullRequest" must {
+    "get a PR" in {
+      val pr = await(gitHub.getPullRequest("foobar-test/asdf", 1, gitHub.integrationToken))
+      (pr \ "id").as[Int] must equal (47550530)
+    }
+  }
+
+  "GitHub.updatePullRequestStatus" must {
+    "update a PR" in {
+      // todo: there is a limit of 1000 statuses per sha and context within a Repository
+      val pr = await(gitHub.getPullRequest("foobar-test/asdf", 1, gitHub.integrationToken))
+      val mergeState = (pr \ "mergeable_state").as[String]
+      val sha = (pr \ "head" \ "sha").as[String]
+      val state = if (mergeState == "clean") "pending" else "success"
+      val statusCreate = await(gitHub.createStatus("foobar-test/asdf", sha, state, "https://salesforce.com", "This is only a test", "salesforce-cla:GitHubSpec", gitHub.integrationToken))
+      (statusCreate \ "state").as[String] must equal (state)
+    }
+  }
+
+  "GitHub.pullRequestCommits" must {
+    "get the commits on a PR" in {
+      val commits = await(gitHub.pullRequestCommits("foobar-test/asdf", 1, gitHub.integrationToken))
+      commits.value.length must be > 0
+    }
+  }
+
+  "GitHub.collaborators" must {
+    "get the collaborators on a repo" in {
+      val collaborators = await(gitHub.collaborators("foobar-test/asdf", gitHub.integrationToken))
+      collaborators.value.length must be > 0
     }
   }
 

@@ -26,6 +26,9 @@ class ContactSpec extends PlaySpec with OneAppPerSuite {
 
   lazy val db = app.injector.instanceOf[Database]
 
+  // clear out the db
+  await(db.raw("start from scratch", "drop table schema_version"))
+
   "Contact" must {
     "be creatable" in {
       val numRows = await(db.execute(CreateContact(Contact(UUID.randomUUID().toString, "foo", "bar", "foo@bar.com"))))

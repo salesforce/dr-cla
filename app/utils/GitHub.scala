@@ -5,7 +5,7 @@ import javax.inject.Inject
 
 import play.api.Application
 import play.api.http.{HeaderNames, MimeTypes, Status}
-import play.api.libs.json.{JsArray, JsValue}
+import play.api.libs.json.{Reads, Json, JsArray, JsValue}
 import play.api.libs.ws.{WS, WSRequest, WSResponse}
 import play.api.mvc.Results.EmptyContent
 
@@ -16,6 +16,7 @@ class GitHub @Inject()(implicit app: Application, ec: ExecutionContext) {
 
   val clientId = app.configuration.getString("github.oauth.client-id").get
   val clientSecret = app.configuration.getString("github.oauth.client-secret").get
+  val integrationToken = app.configuration.getString("github.token").get
 
   def ws(path: String, accessToken: String): WSRequest = {
     WS
@@ -44,7 +45,9 @@ class GitHub @Inject()(implicit app: Application, ec: ExecutionContext) {
   }
 
   // deals with pagination
-  def allRepos(path: String, accessToken: String, pageSize: Int = 100): Future[JsArray] = {
+  def userRepos(user: String, accessToken: String, pageSize: Int = 100): Future[JsArray] = {
+
+    val path = s"users/$user/repos"
 
     import org.jboss.netty.handler.codec.http.QueryStringDecoder
 
@@ -83,6 +86,7 @@ class GitHub @Inject()(implicit app: Application, ec: ExecutionContext) {
     }
   }
 
+  /*
   def repos(accessToken: String): Future[JsArray] = {
     ws("user/orgs", accessToken).get().flatMap { orgsResponse =>
       val orgNames = (orgsResponse.json \\ "login").map(_.as[String])
@@ -95,6 +99,7 @@ class GitHub @Inject()(implicit app: Application, ec: ExecutionContext) {
       }
     }
   }
+  */
 
   def userInfo(accessToken: String): Future[JsValue] = {
     ws("user", accessToken).get().flatMap { response =>
@@ -105,7 +110,56 @@ class GitHub @Inject()(implicit app: Application, ec: ExecutionContext) {
     }
   }
 
-  def seqFutures[T, U](items: TraversableOnce[T])(f: T => Future[U]): Future[List[U]] = {
+  def getPullRequest(ownerRepo: String, pullRequestId: Int, accessToken: String): Future[JsValue] = {
+    val path = s"repos/$ownerRepo/pulls/$pullRequestId"
+
+    ws(path, accessToken).get().flatMap(ok[JsValue])
+  }
+
+  def createStatus(ownerRepo: String, sha: String, state: String, url: String, description: String, context: String, accessToken: String): Future[JsValue] = {
+    val path = s"repos/$ownerRepo/statuses/$sha"
+
+    val json = Json.obj(
+      "state" -> state,
+      "target_url" -> url,
+      "description" -> description,
+      "context" -> context
+    )
+
+    ws(path, accessToken).post(json).flatMap(created)
+  }
+
+  def pullRequestCommits(ownerRepo: String, pullRequestId: Int, accessToken: String): Future[JsArray] = {
+    val path = s"repos/$ownerRepo/pulls/$pullRequestId/commits"
+
+    ws(path, accessToken).get().flatMap(ok[JsArray])
+  }
+
+  def collaborators(ownerRepo: String, accessToken: String): Future[JsArray] = {
+    val path = s"repos/$ownerRepo/collaborators"
+
+    ws(path, accessToken).get().flatMap(ok[JsArray])
+  }
+
+  private def ok[A](response: WSResponse)(implicit w: Reads[A]): Future[A] = status(Status.OK, response).flatMap { jsValue =>
+    jsValue.asOpt[A].fold {
+      Future.failed[A](new IllegalStateException("Data was not in the expected form"))
+    } (Future.successful)
+  }
+
+  // todo: ok with a JsValue default
+
+  private def created(response: WSResponse): Future[JsValue] = status(Status.CREATED, response)
+
+  private def status(statusCode: Int, response: WSResponse): Future[JsValue] = {
+    if (response.status == statusCode) {
+      Future.successful(response.json)
+    } else {
+      Future.failed(new IllegalStateException(response.body))
+    }
+  }
+
+  private def seqFutures[T, U](items: TraversableOnce[T])(f: T => Future[U]): Future[List[U]] = {
     items.foldLeft(Future.successful[List[U]](Nil)) {
       (futures, item) => futures.flatMap { values =>
         f(item).map(_ :: values)

@@ -11,19 +11,19 @@ object Contact {
     (parts.tail.reverse.mkString(" "), parts.head)
   }
 
-}
-
-case object GetContacts extends Query[Seq[Contact]] {
-  override val sql = "SELECT id, firstname, lastname, email FROM salesforce.Contact"
-  override val values = Nil
-
-  override def reduce(rows: Iterator[Row]) = rows.map { row =>
+  def rowToContact(row: Row): Contact = {
     val id = row.as[String]("id")
     val firstName = row.as[String]("firstname")
     val lastName = row.as[String]("lastname")
     val email = row.as[String]("email")
     Contact(id, firstName, lastName, email)
-  }.toSeq
+  }
+
+}
+
+case object GetContacts extends Query[Seq[Contact]] {
+  override val sql = "SELECT id, firstname, lastname, email FROM salesforce.Contact"
+  override def reduce(rows: Iterator[Row]) = rows.map(Contact.rowToContact).toSeq
 }
 
 case class CreateContact(contact: Contact) extends Statement {
