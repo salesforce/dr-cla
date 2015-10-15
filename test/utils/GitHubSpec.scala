@@ -82,4 +82,11 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
     }
   }
 
+  "GitHub.commentOnIssue" must {
+    "comment on an issue" in {
+      val commentCreate = await(gitHub.commentOnIssue("foobar-test/asdf", 1, "This is only a test.", gitHub.integrationToken))
+      (commentCreate \ "id").asOpt[Int] mustBe 'defined
+    }
+  }
+
 }

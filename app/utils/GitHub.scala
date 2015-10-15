@@ -5,7 +5,7 @@ import javax.inject.Inject
 
 import play.api.Application
 import play.api.http.{HeaderNames, MimeTypes, Status}
-import play.api.libs.json.{Reads, Json, JsArray, JsValue}
+import play.api.libs.json._
 import play.api.libs.ws.{WS, WSRequest, WSResponse}
 import play.api.mvc.Results.EmptyContent
 
@@ -54,7 +54,7 @@ class GitHub @Inject()(implicit app: Application, ec: ExecutionContext) {
     import collection.JavaConverters._
 
     implicit class Regex(sc: StringContext) {
-      def r = new util.matching.Regex(sc.parts.mkString, sc.parts.tail.map(_ => "x"): _*)
+      def r = new scala.util.matching.Regex(sc.parts.mkString, sc.parts.tail.map(_ => "x"): _*)
     }
 
     def req(path: String, accessToken: String, page: Int, pageSize: Int): Future[WSResponse] = {
@@ -139,6 +139,15 @@ class GitHub @Inject()(implicit app: Application, ec: ExecutionContext) {
     val path = s"repos/$ownerRepo/collaborators"
 
     ws(path, accessToken).get().flatMap(ok[JsArray])
+  }
+
+  def commentOnIssue(ownerRepo: String, issueNumber: Int, body: String, accessToken: String): Future[JsValue] = {
+    // /
+    val path = s"repos/$ownerRepo/issues/$issueNumber/comments"
+    val json = Json.obj(
+      "body" -> body
+    )
+    ws(path, accessToken).post(json).flatMap(created)
   }
 
   private def ok[A](response: WSResponse)(implicit w: Reads[A]): Future[A] = status(Status.OK, response).flatMap { jsValue =>

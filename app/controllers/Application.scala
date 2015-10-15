@@ -119,10 +119,16 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
       val state = if (committersWithoutClas.isEmpty) "success" else "failure"
       val description = if (committersWithoutClas.isEmpty) "All contributors have signed the CLA" else "One or more contributors need to sign the CLA"
 
-      // todo: when clas are needed, comment on the PR and mention the users
-
-      gitHub.createStatus(ownerRepo, sha, state, routes.Application.signCla().absoluteURL()(request), description, "salesforce-cla", gitHub.integrationToken).map { _ =>
-        Ok
+      gitHub.createStatus(ownerRepo, sha, state, routes.Application.signCla().absoluteURL()(request), description, "salesforce-cla", gitHub.integrationToken).flatMap { _ =>
+        // todo: do not do this more than once
+        if (committersWithoutClas.nonEmpty) {
+          val claUrl = routes.Application.signCla().absoluteURL()(request)
+          val body = s"Thanks for the contribution!  Before we can merge this, we need ${committersWithoutClas.map(" @" + _).mkString} to [sign the Salesforce Contributor License Agreement]($claUrl)."
+            gitHub.commentOnIssue(ownerRepo, prNumber, body, gitHub.integrationToken).map(_ => Ok)
+        }
+        else {
+          Future.successful(Ok)
+        }
       }
     }
   }
