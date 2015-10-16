@@ -45,7 +45,7 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
   "GitHub.userInfo" must {
     "fetch the userInfo" in {
       val userInfo = await(gitHub.userInfo(gitHub.integrationToken))
-      (userInfo \ "login").asOpt[String] mustBe 'defined
+      (userInfo \ "login").asOpt[String] must be ('defined)
     }
   }
 
@@ -85,7 +85,42 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
   "GitHub.commentOnIssue" must {
     "comment on an issue" in {
       val commentCreate = await(gitHub.commentOnIssue("foobar-test/asdf", 1, "This is only a test.", gitHub.integrationToken))
-      (commentCreate \ "id").asOpt[Int] mustBe 'defined
+      (commentCreate \ "id").asOpt[Int] must be ('defined)
+    }
+  }
+
+  "GitHub.userOrgs" must {
+    "include the orgs" in {
+      val userOrgs = await(gitHub.userOrgs(gitHub.integrationToken))
+      userOrgs.value.map(_.\("login").as[String]) must contain ("foobar-test")
+    }
+  }
+
+  "GitHub.allRepos" must {
+    "include everything" in {
+      val repos = await(gitHub.allRepos(gitHub.integrationToken))
+      repos.value.map(_.\("full_name").as[String]) must contain ("foobar-test/asdf")
+    }
+  }
+
+  "GitHub.pullRequests" must {
+    "get the pull requests" in {
+      val pullRequests = await(gitHub.pullRequests("foobar-test/asdf", gitHub.integrationToken))
+      pullRequests.value.length must be > 0
+    }
+  }
+
+  "GitHub.commitStatus" must {
+    "get the commit status" in {
+      val commitStatus = await(gitHub.commitStatus("foobar-test/asdf", "b8a2750a3dbe96ff2209d2b754ba278bc14b7b45", gitHub.integrationToken))
+      (commitStatus \ "state").as[String] must equal ("failure")
+    }
+  }
+
+  "GitHub.issueComments" must {
+    "get the issue comments" in {
+      val issueComments = await(gitHub.issueComments("foobar-test/asdf", 1, gitHub.integrationToken))
+      issueComments.value.length must be > 0
     }
   }
 

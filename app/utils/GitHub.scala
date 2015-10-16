@@ -45,9 +45,13 @@ class GitHub @Inject()(implicit app: Application, ec: ExecutionContext) {
   }
 
   // deals with pagination
-  def userRepos(user: String, accessToken: String, pageSize: Int = 100): Future[JsArray] = {
+  // todo: extract paging logic
+  private def userOrOrgRepos(userOrOrg: Either[String, String], accessToken: String, pageSize: Int = 100): Future[JsArray] = {
 
-    val path = s"users/$user/repos"
+    val path = userOrOrg match {
+      case Left(user) => s"users/$user/repos"
+      case Right(org) => s"orgs/$org/repos"
+    }
 
     import org.jboss.netty.handler.codec.http.QueryStringDecoder
 
@@ -86,20 +90,32 @@ class GitHub @Inject()(implicit app: Application, ec: ExecutionContext) {
     }
   }
 
-  /*
-  def repos(accessToken: String): Future[JsArray] = {
-    ws("user/orgs", accessToken).get().flatMap { orgsResponse =>
-      val orgNames = (orgsResponse.json \\ "login").map(_.as[String])
-      val orgReposFutures = orgNames.map { orgName =>
-        allRepos(s"orgs/$orgName/repos", accessToken)
-      }
-      val userReposFuture = allRepos("user/repos", accessToken)
-      Future.fold(orgReposFutures :+ userReposFuture)(JsArray()) { case (allRepos, orgRepos) =>
-        allRepos ++ orgRepos.as[JsArray]
+  def userRepos(user: String, accessToken: String, pageSize: Int = 100): Future[JsArray] = {
+    userOrOrgRepos(Left(user), accessToken, pageSize)
+  }
+
+  def orgRepos(org: String, accessToken: String, pageSize: Int = 100): Future[JsArray] = {
+    userOrOrgRepos(Right(org), accessToken, pageSize)
+  }
+
+  def allRepos(accessToken: String): Future[JsArray] = {
+    for {
+      userInfo <- userInfo(accessToken)
+      userLogin = (userInfo \ "login").as[String]
+      userOrgs <- userOrgs(accessToken)
+      orgNames = userOrgs.value.map(_.\("login").as[String])
+      userRepos <- userRepos(userLogin, accessToken)
+      orgsRepos <- Future.sequence(orgNames.map(org => orgRepos(org, accessToken)))
+    } yield {
+      orgsRepos.fold(userRepos) { case (allRepos, orgRepo) =>
+        allRepos ++ orgRepo
       }
     }
   }
-  */
+
+  def userOrgs(accessToken: String): Future[JsArray] = {
+    ws("user/orgs", accessToken).get().flatMap(ok[JsArray])
+  }
 
   def userInfo(accessToken: String): Future[JsValue] = {
     ws("user", accessToken).get().flatMap { response =>
@@ -114,6 +130,11 @@ class GitHub @Inject()(implicit app: Application, ec: ExecutionContext) {
     val path = s"repos/$ownerRepo/pulls/$pullRequestId"
 
     ws(path, accessToken).get().flatMap(ok[JsValue])
+  }
+
+  def pullRequests(ownerRepo: String, accessToken: String): Future[JsArray] = {
+    val path = s"repos/$ownerRepo/pulls"
+    ws(path, accessToken).get().flatMap(ok[JsArray])
   }
 
   def createStatus(ownerRepo: String, sha: String, state: String, url: String, description: String, context: String, accessToken: String): Future[JsValue] = {
@@ -148,6 +169,16 @@ class GitHub @Inject()(implicit app: Application, ec: ExecutionContext) {
       "body" -> body
     )
     ws(path, accessToken).post(json).flatMap(created)
+  }
+
+  def commitStatus(ownerRepo: String, ref: String, accessToken: String): Future[JsValue] = {
+    val path = s"repos/$ownerRepo/commits/$ref/status"
+    ws(path, accessToken).get().flatMap(ok[JsValue])
+  }
+
+  def issueComments(ownerRepo: String, issueNumber: Int, accessToken: String): Future[JsArray] = {
+    val path = s"repos/$ownerRepo/issues/$issueNumber/comments"
+    ws(path, accessToken).get().flatMap(ok[JsArray])
   }
 
   private def ok[A](response: WSResponse)(implicit w: Reads[A]): Future[A] = status(Status.OK, response).flatMap { jsValue =>

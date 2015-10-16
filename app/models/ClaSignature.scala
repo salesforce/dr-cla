@@ -6,7 +6,7 @@ import jdub.async.{Row, Query, Statement}
 import org.joda.time.LocalDate
 
 
-case class ClaSignature(id: String, contact: Contact, githubId: String, signedOn: Date, claVersion: String)
+case class ClaSignature(id: String, contact: Contact, gitHubId: String, signedOn: Date, claVersion: String)
 
 object ClaSignature {
   def rowToClaSignature(row: Row): ClaSignature = {
@@ -21,7 +21,7 @@ object ClaSignature {
 
 case class CreateClaSignature(claSignature: ClaSignature) extends Statement {
   override val sql = "INSERT INTO salesforce.cla_signature__c VALUES(?, ?, ?, ?, ?)"
-  override val values = Seq(claSignature.id, claSignature.contact.id, claSignature.githubId, claSignature.signedOn, claSignature.claVersion)
+  override val values = Seq(claSignature.id, claSignature.contact.id, claSignature.gitHubId, claSignature.signedOn, claSignature.claVersion)
 }
 
 case class GetClaSignatures(gitHubIds: Set[String]) extends Query[Seq[ClaSignature]] {

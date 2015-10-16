@@ -7,6 +7,7 @@ import models._
 import modules.Database
 import play.api.Environment
 import play.api.libs.Crypto
+import play.api.libs.json.{JsArray, Json, JsObject, JsValue}
 import play.api.mvc._
 import utils.GitHub
 
@@ -73,6 +74,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
           if contactsCreated == 1
           claSignaturesCreated <- db.execute(CreateClaSignature(claSignature))
           if claSignaturesCreated == 1
+          _ <- revalidatePullRequests(claSignature.gitHubId)(request) // todo: maybe do this off the request thread
         } yield Redirect(routes.Application.signedCla)
       }
     }
@@ -85,52 +87,108 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
 
   def webhookPullRequest = Action.async(parse.json) { request =>
     // todo: maybe filter on "action" = "opened", "reopened”, or “synchronize”
-    val ownerRepo = (request.body \ "pull_request" \ "base" \ "repo" \ "full_name").as[String]
-    val prNumber = (request.body \ "number").as[Int]
+    for {
+      pullRequestWithCommitsAndStatus <- pullRequestWithCommitsAndStatus((request.body \ "pull_request").as[JsValue])
+      validate <- validatePullRequests(Seq(pullRequestWithCommitsAndStatus))(request)
+    } yield Ok
+  }
 
-    val sha = (request.body \ "pull_request" \ "head" \ "sha").as[String]
+  private def validatePullRequests(pullRequests: Seq[JsObject])(request: RequestHeader): Future[JsArray] = {
+    val claUrl = routes.Application.signCla().absoluteURL()(request)
 
-    // update the PR status to pending
-    val prPendingFuture = gitHub.createStatus(ownerRepo, sha, "pending", routes.Application.signCla().absoluteURL()(request), "The CLA verifier is running", "salesforce-cla", gitHub.integrationToken)
+    gitHub.userInfo(gitHub.integrationToken).flatMap { integrationUser =>
+      val integrationUserId = (integrationUser \ "login").as[String]
 
-    val prCommitsFuture = gitHub.pullRequestCommits(ownerRepo, prNumber, gitHub.integrationToken)
+      val results = pullRequests.map { pullRequest =>
+        val ownerRepo = (pullRequest \ "pull_request" \ "base" \ "repo" \ "full_name").as[String]
+        val prNumber = (pullRequest \ "pull_request" \ "number").as[Int]
+        val sha = (pullRequest \ "pull_request" \ "head" \ "sha").as[String]
 
-    val prCommittersFuture = prCommitsFuture.map { commits =>
-      commits.value.map(_.\("committer").\("login").as[String])
-    }
+        // update the PR status to pending
+        val prPendingFuture = gitHub.createStatus(ownerRepo, sha, "pending", claUrl, "The CLA verifier is running", "salesforce-cla", gitHub.integrationToken)
 
-    val internalCommittersFuture = gitHub.collaborators(ownerRepo, gitHub.integrationToken).map(_.value.map(_.\("login").as[String]))
+        val prCommitsFuture = gitHub.pullRequestCommits(ownerRepo, prNumber, gitHub.integrationToken)
 
-    val externalCommittersFuture = for {
-      _ <- prPendingFuture
-      prCommitters <- prCommittersFuture
-      internalCommitters <- internalCommittersFuture
-    } yield prCommitters.filterNot(internalCommitters.contains).toSet
-
-    val committersWithoutClasFuture = for {
-      externalCommitters <- externalCommittersFuture
-      clasForCommitters <- db.query(GetClaSignatures(externalCommitters))
-    } yield {
-      // todo: maybe check latest CLA version
-      externalCommitters.filterNot(clasForCommitters.map(_.githubId).contains)
-    }
-
-    committersWithoutClasFuture.flatMap { committersWithoutClas =>
-      val state = if (committersWithoutClas.isEmpty) "success" else "failure"
-      val description = if (committersWithoutClas.isEmpty) "All contributors have signed the CLA" else "One or more contributors need to sign the CLA"
-
-      gitHub.createStatus(ownerRepo, sha, state, routes.Application.signCla().absoluteURL()(request), description, "salesforce-cla", gitHub.integrationToken).flatMap { _ =>
-        // todo: do not do this more than once
-        if (committersWithoutClas.nonEmpty) {
-          val claUrl = routes.Application.signCla().absoluteURL()(request)
-          val body = s"Thanks for the contribution!  Before we can merge this, we need ${committersWithoutClas.map(" @" + _).mkString} to [sign the Salesforce Contributor License Agreement]($claUrl)."
-            gitHub.commentOnIssue(ownerRepo, prNumber, body, gitHub.integrationToken).map(_ => Ok)
+        val prCommittersFuture = prCommitsFuture.map { commits =>
+          commits.value.map(_.\("committer").\("login").as[String])
         }
-        else {
-          Future.successful(Ok)
+
+        val internalCommittersFuture = gitHub.collaborators(ownerRepo, gitHub.integrationToken).map(_.value.map(_.\("login").as[String]))
+
+        val externalCommittersFuture = for {
+          _ <- prPendingFuture
+          prCommitters <- prCommittersFuture
+          internalCommitters <- internalCommittersFuture
+        } yield prCommitters.filterNot(internalCommitters.contains).toSet
+
+        val committersWithoutClasFuture = for {
+          externalCommitters <- externalCommittersFuture
+          clasForCommitters <- db.query(GetClaSignatures(externalCommitters))
+        } yield {
+          // todo: maybe check latest CLA version
+          externalCommitters.filterNot(clasForCommitters.map(_.gitHubId).contains)
+        }
+
+        committersWithoutClasFuture.flatMap { committersWithoutClas =>
+          val state = if (committersWithoutClas.isEmpty) "success" else "failure"
+          val description = if (committersWithoutClas.isEmpty) "All contributors have signed the CLA" else "One or more contributors need to sign the CLA"
+
+          gitHub.createStatus(ownerRepo, sha, state, claUrl, description, "salesforce-cla", gitHub.integrationToken).flatMap { status =>
+            // don't re-comment on the PR
+            gitHub.issueComments(ownerRepo, prNumber, gitHub.integrationToken).flatMap { comments =>
+              val alreadyCommented = comments.value.exists(_.\("user").\("login").as[String] == integrationUserId)
+
+              if (committersWithoutClas.nonEmpty && !alreadyCommented) {
+                val body = s"Thanks for the contribution!  Before we can merge this, we need ${committersWithoutClas.map(" @" + _).mkString} to [sign the Salesforce Contributor License Agreement]($claUrl)."
+                gitHub.commentOnIssue(ownerRepo, prNumber, body, gitHub.integrationToken)
+              }
+              else {
+                Future.successful(status)
+              }
+            }
+          }
         }
       }
+
+      Future.fold(results)(Json.arr())(_ :+ _)
     }
+  }
+
+  private def pullRequestWithCommitsAndStatus(pullRequest: JsValue): Future[JsObject] = {
+    val ownerRepo = (pullRequest \ "base" \ "repo" \ "full_name").as[String]
+    val prId = (pullRequest \ "number").as[Int]
+    val ref = (pullRequest \ "head" \ "sha").as[String]
+    val commitsFuture = gitHub.pullRequestCommits(ownerRepo, prId, gitHub.integrationToken)
+    val statusFuture = gitHub.commitStatus(ownerRepo, ref, gitHub.integrationToken)
+    for {
+      commits <- commitsFuture
+      status <- statusFuture
+    } yield {
+      // combine the pull request, commits, and status into one json object
+      Json.obj(
+        "pull_request" -> pullRequest,
+        "commits" -> commits,
+        "status" -> status
+      )
+    }
+  }
+
+  private def pullRequestHasContributorAndState(contributorId: String, state: String)(pullRequest: JsObject): Boolean = {
+    val contributors = (pullRequest \ "commits").as[JsArray].value.map(_.\("author").\("login").as[String])
+    val prState = (pullRequest \ "status" \ "state").as[String]
+    contributors.contains(contributorId) && (state == prState)
+  }
+
+  // todo: add some caching
+  private def revalidatePullRequests(signerGitHubId: String)(request: RequestHeader): Future[JsValue] = {
+    for {
+      repos <- gitHub.allRepos(gitHub.integrationToken)
+      repoNames = repos.value.map(_.\("full_name").as[String])
+      allPullRequests <- Future.sequence(repoNames.map(ownerRepo => gitHub.pullRequests(ownerRepo, gitHub.integrationToken)))
+      pullRequestWithCommitsAndStatus <- Future.sequence(allPullRequests.flatMap(_.value).map(pullRequestWithCommitsAndStatus))
+      pullRequestsToBeValidated = pullRequestWithCommitsAndStatus.filter(pullRequestHasContributorAndState(signerGitHubId, "failure"))
+      validation <- validatePullRequests(pullRequestsToBeValidated)(request)
+    } yield validation
   }
 
   private def authUrl(implicit request: RequestHeader, scopes: Seq[String]): String = {
