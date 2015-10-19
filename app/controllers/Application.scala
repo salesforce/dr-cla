@@ -56,8 +56,8 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
           gitHub.userInfo(gitHubToken).map { userInfo =>
             val username = (userInfo \ "login").as[String]
             val (firstName, lastName) = Contact.fullNameToFirstAndLast(fullName)
-            val contact = Contact(UUID.randomUUID().toString, firstName, lastName, email)
-            ClaSignature(UUID.randomUUID().toString, contact, username, new Date(), claVersion)
+            val contact = Contact(-1, UUID.randomUUID().toString, firstName, lastName, email)
+            ClaSignature(-1, UUID.randomUUID().toString, contact, username, new Date(), claVersion)
           }
         } else {
           Future.failed(new IllegalStateException("The CLA was not agreed to."))

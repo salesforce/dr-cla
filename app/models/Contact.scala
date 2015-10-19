@@ -2,7 +2,7 @@ package models
 
 import jdub.async.{Query, Row, Statement}
 
-case class Contact(id: String, firstName: String, lastName: String, email:String)
+case class Contact(id: Int, sfid: String, firstName: String, lastName: String, email:String)
 
 object Contact {
 
@@ -12,21 +12,22 @@ object Contact {
   }
 
   def rowToContact(row: Row): Contact = {
-    val id = row.as[String]("id")
+    val id = row.as[Int]("id")
+    val sfid = row.as[String]("sfid")
     val firstName = row.as[String]("firstname")
     val lastName = row.as[String]("lastname")
     val email = row.as[String]("email")
-    Contact(id, firstName, lastName, email)
+    Contact(id, sfid, firstName, lastName, email)
   }
 
 }
 
 case object GetContacts extends Query[Seq[Contact]] {
-  override val sql = "SELECT id, firstname, lastname, email FROM salesforce.Contact"
+  override val sql = "SELECT id, sfid, firstname, lastname, email FROM salesforce.Contact"
   override def reduce(rows: Iterator[Row]) = rows.map(Contact.rowToContact).toSeq
 }
 
 case class CreateContact(contact: Contact) extends Statement {
-  override val sql = "INSERT INTO salesforce.Contact VALUES(?, ?, ?, ?)"
-  override val values = Seq(contact.id, contact.firstName, contact.lastName, contact.email)
+  override val sql = "INSERT INTO salesforce.Contact VALUES (DEFAULT, ?, ?, ?, ?)"
+  override val values = Seq(contact.sfid, contact.firstName, contact.lastName, contact.email)
 }

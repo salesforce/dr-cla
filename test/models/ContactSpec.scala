@@ -31,7 +31,7 @@ class ContactSpec extends PlaySpec with OneAppPerSuite {
 
   "Contact" must {
     "be creatable" in {
-      val numRows = await(db.execute(CreateContact(Contact(UUID.randomUUID().toString, "foo", "bar", "foo@bar.com"))))
+      val numRows = await(db.execute(CreateContact(Contact(-1, UUID.randomUUID().toString, "foo", "bar", "foo@bar.com"))))
       numRows mustEqual 1
     }
     "be able to get all" in {

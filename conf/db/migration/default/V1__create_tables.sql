@@ -4,16 +4,18 @@ DROP TABLE IF EXISTS salesforce.CLA_Signature__c;
 DROP TABLE IF EXISTS salesforce.Contact;
 
 CREATE TABLE salesforce.Contact (
-  id VARCHAR PRIMARY KEY,
+  id SERIAL PRIMARY KEY,
+  sfid VARCHAR NOT NULL UNIQUE,
   firstname VARCHAR NOT NULL,
   lastname VARCHAR NOT NULL,
   email VARCHAR NOT NULL
 );
 
 CREATE TABLE salesforce.CLA_Signature__c (
-  id VARCHAR PRIMARY KEY,
-  contact VARCHAR NOT NULL REFERENCES salesforce.Contact (id),
-  github_id VARCHAR NOT NULL,
-  signed_on DATE NOT NULL,
-  cla_version VARCHAR NOT NULL
+  id SERIAL PRIMARY KEY,
+  sfid VARCHAR NOT NULL UNIQUE,
+  contact__c VARCHAR NOT NULL REFERENCES salesforce.Contact (sfid),
+  github_id__c VARCHAR NOT NULL,
+  signed_on__c TIMESTAMP WITH TIME ZONE NOT NULL,
+  cla_version__c VARCHAR NOT NULL
 );
