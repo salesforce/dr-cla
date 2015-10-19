@@ -38,6 +38,14 @@ class ContactSpec extends PlaySpec with OneAppPerSuite {
       val contacts = await(db.query(GetContacts))
       contacts.length mustBe > (0)
     }
+    "be able to get one that exists by the gitHubId" in {
+      val contact = await(db.query(GetContactByGitHubId("foobar")))
+      contact mustBe 'defined
+    }
+    "fail to get one that doesn't exist by a gitHubId" in {
+      val contact = await(db.query(GetContactByGitHubId("asdf")))
+      contact mustBe None
+    }
   }
 
   "Contact.fullNameToFirstAndLast" must {

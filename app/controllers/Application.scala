@@ -53,12 +53,16 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
     } yield {
         if (agreeToCLA == "on") {
           val gitHubToken = Crypto.decryptAES(encGitHubToken)
-          gitHub.userInfo(gitHubToken).map { userInfo =>
-            val username = (userInfo \ "login").as[String]
-            val (firstName, lastName) = Contact.fullNameToFirstAndLast(fullName)
-            val contact = Contact(-1, firstName, lastName, email, username)
-            ClaSignature(-1, contact, new Date(), claVersion)
-          }
+
+          for {
+            userInfo <- gitHub.userInfo(gitHubToken)
+            username = (userInfo \ "login").as[String]
+            maybeContact <- db.query(GetContactByGitHubId(username))
+            contact = maybeContact.getOrElse {
+              val (firstName, lastName) = Contact.fullNameToFirstAndLast(fullName)
+              Contact(-1, firstName, lastName, email, username)
+            }
+          } yield ClaSignature(-1, contact, new Date(), claVersion)
         } else {
           Future.failed(new IllegalStateException("The CLA was not agreed to."))
         }
@@ -69,9 +73,15 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
     } { claSignatureFuture =>
       claSignatureFuture.flatMap { claSignature =>
         // todo: transaction?
+
+        val createContactIfNeededFuture = if (claSignature.contact.id == -1) {
+          db.execute(CreateContact(claSignature.contact))
+        } else {
+          Future.successful(0)
+        }
+
         for {
-          contactsCreated <- db.execute(CreateContact(claSignature.contact))
-          if contactsCreated == 1
+          contactsCreated <- createContactIfNeededFuture
           claSignaturesCreated <- db.execute(CreateClaSignature(claSignature))
           if claSignaturesCreated == 1
           _ <- revalidatePullRequests(claSignature.contact.gitHubId)(request) // todo: maybe do this off the request thread

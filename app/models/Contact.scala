@@ -1,6 +1,6 @@
 package models
 
-import jdub.async.{Query, Row, Statement}
+import jdub.async.{FlatSingleRowQuery, Query, Row, Statement}
 
 case class Contact(id: Int, firstName: String, lastName: String, email: String, gitHubId: String)
 
@@ -25,6 +25,12 @@ object Contact {
 case object GetContacts extends Query[Seq[Contact]] {
   override val sql = "SELECT id, firstname, lastname, email, github_id__c FROM salesforce.Contact"
   override def reduce(rows: Iterator[Row]) = rows.map(Contact.rowToContact).toSeq
+}
+
+case class GetContactByGitHubId(gitHubId: String) extends FlatSingleRowQuery[Contact] {
+  override val sql = "SELECT id, firstname, lastname, email, github_id__c FROM salesforce.Contact WHERE github_id__c = ?"
+  override val values = Seq(gitHubId)
+  override def flatMap(row: Row) = Some(Contact.rowToContact(row))
 }
 
 case class CreateContact(contact: Contact) extends Statement {
