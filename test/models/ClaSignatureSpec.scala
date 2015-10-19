@@ -32,27 +32,22 @@ class ClaSignatureSpec extends PlaySpec with OneAppPerSuite {
   // clear out the db
   await(db.raw("start from scratch", "drop table schema_version"))
 
-  val contactId = UUID.randomUUID().toString
-  val claSignatureId = UUID.randomUUID().toString
-
   "ClaSignature" must {
     "be creatable" in {
-      val contact = Contact(-1, contactId, "foo", "bar", "foo@bar.com")
+      val contact = Contact(-1, "foo", "bar", "foo@bar.com", "foobar")
       await(db.execute(CreateContact(contact)))
-      val numRows = await(db.execute(CreateClaSignature(ClaSignature(-1, claSignatureId, contact, "foobar", new Date(), "0.0.0"))))
+      val numRows = await(db.execute(CreateClaSignature(ClaSignature(-1, contact, new Date(), "0.0.0"))))
       numRows mustEqual 1
     }
     "be queryable with one github id" in {
       val claSignatures = await(db.query(GetClaSignatures(Set("foobar"))))
       claSignatures.length mustEqual 1
-      claSignatures.head.sfid mustEqual claSignatureId
-      claSignatures.head.contact.sfid mustEqual contactId
+      claSignatures.head.contact.gitHubId mustEqual "foobar"
     }
     "be queryable with a set of github ids" in {
       val claSignatures = await(db.query(GetClaSignatures(Set("foobar", "jondoe"))))
       claSignatures.length mustEqual 1
-      claSignatures.head.sfid mustEqual claSignatureId
-      claSignatures.head.contact.sfid mustEqual contactId
+      claSignatures.head.contact.gitHubId mustEqual "foobar"
     }
   }
 

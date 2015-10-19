@@ -56,8 +56,8 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
           gitHub.userInfo(gitHubToken).map { userInfo =>
             val username = (userInfo \ "login").as[String]
             val (firstName, lastName) = Contact.fullNameToFirstAndLast(fullName)
-            val contact = Contact(-1, UUID.randomUUID().toString, firstName, lastName, email)
-            ClaSignature(-1, UUID.randomUUID().toString, contact, username, new Date(), claVersion)
+            val contact = Contact(-1, firstName, lastName, email, username)
+            ClaSignature(-1, contact, new Date(), claVersion)
           }
         } else {
           Future.failed(new IllegalStateException("The CLA was not agreed to."))
@@ -74,7 +74,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
           if contactsCreated == 1
           claSignaturesCreated <- db.execute(CreateClaSignature(claSignature))
           if claSignaturesCreated == 1
-          _ <- revalidatePullRequests(claSignature.gitHubId)(request) // todo: maybe do this off the request thread
+          _ <- revalidatePullRequests(claSignature.contact.gitHubId)(request) // todo: maybe do this off the request thread
         } yield Redirect(routes.Application.signedCla)
       }
     }
@@ -126,7 +126,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
           clasForCommitters <- db.query(GetClaSignatures(externalCommitters))
         } yield {
           // todo: maybe check latest CLA version
-          externalCommitters.filterNot(clasForCommitters.map(_.gitHubId).contains)
+          externalCommitters.filterNot(clasForCommitters.map(_.contact.gitHubId).contains)
         }
 
         committersWithoutClasFuture.flatMap { committersWithoutClas =>
