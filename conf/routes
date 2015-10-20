@@ -9,8 +9,10 @@ GET         /signed-cla                    controllers.Application.signedCla
 
 POST        /webhook-pullrequest           controllers.Application.webhookPullRequest
 
+GET         /audit                         controllers.Application.audit
+
 # OAuth
-GET         /_github_oauth_callback        controllers.Application.githubOauthCallback(code: String)
+GET         /_github_oauth_callback        controllers.Application.gitHubOauthCallback(code: String, state: String)
 
 
 # Map static resources from the /public folder to the /assets URL path

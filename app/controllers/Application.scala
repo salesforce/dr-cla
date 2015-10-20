@@ -1,6 +1,6 @@
 package controllers
 
-import java.util.{Date, UUID}
+import java.util.Date
 import javax.inject.Inject
 
 import models._
@@ -21,26 +21,34 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
   val claVersions = Set("0.0")
   val latestClaVersion = claVersions.head
 
-  val gitHubOauthScopes = Seq("user","user:email")
+  val gitHubOauthScopesForClaSigning = Seq("user","user:email")
 
-  def githubOauthCallback(code: String) = Action.async { request =>
-    gitHub.accessToken(code).flatMap { accessToken =>
-      gitHub.userInfo(accessToken).map { userInfo =>
-        val username = (userInfo \ "login").as[String]
-        val maybeFullName = (userInfo \ "name").asOpt[String]
-        val maybeEmail = (userInfo \ "email").asOpt[String]
-        val encAccessToken = Crypto.encryptAES(accessToken)
-        val gitHubAuthInfo = GitHubAuthInfo(encAccessToken, username, maybeFullName, maybeEmail)
-        Ok(views.html.claSign(latestClaVersion, authUrl(request, gitHubOauthScopes), Some(gitHubAuthInfo), latestClaVersion, claText(latestClaVersion)))
-      }
+  // state is used for the URL to redirect to
+  def gitHubOauthCallback(code: String, state: String) = Action.async { request =>
+    gitHub.accessToken(code).map { accessToken =>
+      val encAccessToken = Crypto.encryptAES(accessToken)
+      Redirect(state).flashing("encAccessToken" -> encAccessToken)
     } recover {
-      case e: utils.UnauthorizedError => Redirect(routes.Application.signCla).flashing("error" -> e.getMessage)
+      case e: utils.UnauthorizedError => Redirect(state).flashing("error" -> e.getMessage)
       case e: Exception => InternalServerError(e.getMessage)
     }
   }
 
-  def signCla = Action { request =>
-    Ok(views.html.claSign(claVersions.head, authUrl(request, gitHubOauthScopes), None, latestClaVersion, claText(latestClaVersion)))
+  def signCla = Action.async { implicit request =>
+    request.flash.get("encAccessToken").fold {
+      Future.successful[Option[GitHubAuthInfo]](None)
+    } { encAccessToken =>
+      val accessToken = Crypto.decryptAES(encAccessToken)
+      gitHub.userInfo(accessToken).map { userInfo =>
+        val username = (userInfo \ "login").as[String]
+        val maybeFullName = (userInfo \ "name").asOpt[String]
+        val maybeEmail = (userInfo \ "email").asOpt[String]
+        Some(GitHubAuthInfo(encAccessToken, username, maybeFullName, maybeEmail))
+      }
+    } map { maybeGitHubAuthInfo =>
+      val authUrl = gitHubAuthUrl(gitHubOauthScopesForClaSigning, routes.Application.signCla().absoluteURL())
+      Ok(views.html.claSign(latestClaVersion, authUrl, maybeGitHubAuthInfo, latestClaVersion, claText(latestClaVersion)))
+    }
   }
 
   def submitCla = Action.async(parse.urlFormEncoded) { request =>
@@ -85,7 +93,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
           claSignaturesCreated <- db.execute(CreateClaSignature(claSignature))
           if claSignaturesCreated == 1
           _ <- revalidatePullRequests(claSignature.contact.gitHubId)(request) // todo: maybe do this off the request thread
-        } yield Redirect(routes.Application.signedCla)
+        } yield Redirect(routes.Application.signedCla())
       }
     }
 
@@ -101,6 +109,10 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
       pullRequestWithCommitsAndStatus <- pullRequestWithCommitsAndStatus((request.body \ "pull_request").as[JsValue])
       validate <- validatePullRequests(Seq(pullRequestWithCommitsAndStatus))(request)
     } yield Ok
+  }
+
+  def audit = Action.async { request =>
+    Future.successful(NotImplemented)
   }
 
   private def validatePullRequests(pullRequests: Seq[JsObject])(request: RequestHeader): Future[JsArray] = {
@@ -201,12 +213,12 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
     } yield validation
   }
 
-  private def authUrl(implicit request: RequestHeader, scopes: Seq[String]): String = {
-    s"https://github.com/login/oauth/authorize?client_id=${gitHub.clientId}&redirect_uri=$redirectUri&scope=${scopes.mkString(",")}"
+  private def gitHubAuthUrl(scopes: Seq[String], state: String)(implicit request: RequestHeader): String = {
+    s"https://gitHub.com/login/oauth/authorize?client_id=${gitHub.clientId}&redirect_uri=$redirectUri&scope=${scopes.mkString(",")}&state=$state"
   }
 
   private def redirectUri(implicit request: RequestHeader): String = {
-    routes.Application.githubOauthCallback("").absoluteURL(request.secure).stripSuffix("?code=")
+    routes.Application.gitHubOauthCallback("", "").absoluteURL(request.secure).stripSuffix("?code=&state=")
   }
 
   private def claText(version: String): String = {
