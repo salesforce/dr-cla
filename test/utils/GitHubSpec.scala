@@ -124,4 +124,25 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
     }
   }
 
+  "GitHub.addOrgWebhook" must {
+    "create an org Webhook" in {
+      val status = await(gitHub.addOrgWebhook("foobar-test", Seq("pull_request"), "http://localhost:9000/foo", "json", gitHub.integrationToken))
+      (status \ "active").as[Boolean] must be (true)
+    }
+  }
+
+  "GitHub.orgWebhooks" must {
+    "get the org webhooks" in {
+      val webhooks = await(gitHub.orgWebhooks("foobar-test", gitHub.integrationToken))
+      webhooks.value.length must be > 0
+    }
+  }
+
+  "GitHub.userOrgMembership" must {
+    "get the users org membership" in {
+      val membership = await(gitHub.userOrgMembership("foobar-test", gitHub.integrationToken))
+      (membership \ "role").asOpt[String] must be ('defined)
+    }
+  }
+
 }

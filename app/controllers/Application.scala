@@ -35,23 +35,13 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
   }
 
   def signCla = Action.async { implicit request =>
-    request.flash.get("encAccessToken").fold {
-      Future.successful[Option[GitHubAuthInfo]](None)
-    } { encAccessToken =>
-      val accessToken = Crypto.decryptAES(encAccessToken)
-      gitHub.userInfo(accessToken).map { userInfo =>
-        val username = (userInfo \ "login").as[String]
-        val maybeFullName = (userInfo \ "name").asOpt[String]
-        val maybeEmail = (userInfo \ "email").asOpt[String]
-        Some(GitHubAuthInfo(encAccessToken, username, maybeFullName, maybeEmail))
-      }
-    } map { maybeGitHubAuthInfo =>
+    getGitHubAuthInfo(request).map { maybeGitHubAuthInfo =>
       val authUrl = gitHubAuthUrl(gitHubOauthScopesForClaSigning, routes.Application.signCla().absoluteURL())
       Ok(views.html.claSign(latestClaVersion, authUrl, maybeGitHubAuthInfo, latestClaVersion, claText(latestClaVersion)))
     }
   }
 
-  def submitCla = Action.async(parse.urlFormEncoded) { request =>
+  def submitCla = Action.async(parse.urlFormEncoded) { implicit request =>
     val maybeClaSignatureFuture = for {
       encGitHubToken <- request.body.get("encGitHubToken").flatMap(_.headOption)
       claVersion <- claVersions.find(request.body.get("claVersion").flatMap(_.headOption).contains)
@@ -92,7 +82,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
           contactsCreated <- createContactIfNeededFuture
           claSignaturesCreated <- db.execute(CreateClaSignature(claSignature))
           if claSignaturesCreated == 1
-          _ <- revalidatePullRequests(claSignature.contact.gitHubId)(request) // todo: maybe do this off the request thread
+          _ <- revalidatePullRequests(claSignature.contact.gitHubId) // todo: maybe do this off the request thread
         } yield Redirect(routes.Application.signedCla())
       }
     }
@@ -103,20 +93,81 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
     Ok(views.html.claSigned())
   }
 
-  def webhookPullRequest = Action.async(parse.json) { request =>
+  def webhookPullRequest = Action.async(parse.json) { implicit request =>
     // todo: maybe filter on "action" = "opened", "reopened”, or “synchronize”
     for {
       pullRequestWithCommitsAndStatus <- pullRequestWithCommitsAndStatus((request.body \ "pull_request").as[JsValue])
-      validate <- validatePullRequests(Seq(pullRequestWithCommitsAndStatus))(request)
+      validate <- validatePullRequests(Seq(pullRequestWithCommitsAndStatus))
     } yield Ok
   }
 
-  def audit = Action.async { request =>
-    Future.successful(NotImplemented)
+  def audit = Action.async { implicit request =>
+    getGitHubAuthInfo(request).flatMap { maybeGitHubAuthInfo =>
+      maybeGitHubAuthInfo.fold {
+        Future.successful(Redirect(gitHubAuthUrl(Seq("read:org", "admin:org_hook"), routes.Application.audit().absoluteURL())))
+      } { gitHubAuthInfo =>
+        val accessToken = Crypto.decryptAES(gitHubAuthInfo.encAuthToken)
+
+        def fetchOrgRepos(org: GitHub.Org): Future[GitHub.Org] = {
+          gitHub.orgRepos(org.login, accessToken).map(_.as[Seq[GitHub.Repo]]).map(repos => org.copy(repos = repos))
+        }
+
+        for {
+          userOrgs <- gitHub.userOrgs(accessToken).map(_.as[Seq[GitHub.Org]])
+          orgsWithRepos <- Future.sequence(userOrgs.map(fetchOrgRepos))
+        } yield {
+          Ok(views.html.audit(gitHubAuthInfo.encAuthToken, orgsWithRepos))
+        }
+      }
+    }
   }
 
-  private def validatePullRequests(pullRequests: Seq[JsObject])(request: RequestHeader): Future[JsArray] = {
-    val claUrl = routes.Application.signCla().absoluteURL()(request)
+  def auditPrValidatorStatus(org: String, encAccessToken: String) = Action.async { implicit request =>
+    val accessToken = Crypto.decryptAES(encAccessToken)
+
+    gitHub.orgWebhooks(org, accessToken).map { webhooks =>
+      val webhookUrl = routes.Application.webhookPullRequest().absoluteURL()
+      val maybeWebhook = webhooks.value.find(_.\("config").\("url").as[String] == webhookUrl)
+      val maybeWebhookUrl = maybeWebhook.map { webhook =>
+        val id = (webhook \ "id").as[Int]
+        s"https://github.com/organizations/$org/settings/hooks/$id"
+      }
+      Ok(views.html.prValidatorStatus(org, maybeWebhookUrl, encAccessToken))
+    }
+  }
+
+  def addPrValidatorWebhook() = Action.async(parse.urlFormEncoded) { implicit request =>
+    val maybeOrg = request.body.get("org").flatMap(_.headOption)
+    val maybeEncAccessToken = request.body.get("encAccessToken").flatMap(_.headOption)
+
+    (maybeOrg, maybeEncAccessToken) match {
+      case (Some(org), Some(encAccessToken)) =>
+        val accessToken = Crypto.decryptAES(encAccessToken)
+        val webhookUrl = routes.Application.webhookPullRequest().absoluteURL()
+        gitHub.addOrgWebhook(org, Seq("pull_request"), webhookUrl, "json", accessToken).map { _ =>
+          Redirect(routes.Application.audit())
+        }
+      case _ =>
+        Future.successful(BadRequest("Required fields missing"))
+    }
+  }
+
+  private def getGitHubAuthInfo(request: RequestHeader): Future[Option[GitHubAuthInfo]] = {
+    request.flash.get("encAccessToken").fold {
+      Future.successful[Option[GitHubAuthInfo]](None)
+    } { encAccessToken =>
+      val accessToken = Crypto.decryptAES(encAccessToken)
+      gitHub.userInfo(accessToken).map { userInfo =>
+        val username = (userInfo \ "login").as[String]
+        val maybeFullName = (userInfo \ "name").asOpt[String]
+        val maybeEmail = (userInfo \ "email").asOpt[String]
+        Some(GitHubAuthInfo(encAccessToken, username, maybeFullName, maybeEmail))
+      }
+    }
+  }
+
+  private def validatePullRequests(pullRequests: Seq[JsObject])(implicit request: RequestHeader): Future[JsArray] = {
+    val claUrl = routes.Application.signCla().absoluteURL()
 
     gitHub.userInfo(gitHub.integrationToken).flatMap { integrationUser =>
       val integrationUserId = (integrationUser \ "login").as[String]
@@ -135,13 +186,13 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
           commits.value.map(_.\("committer").\("login").as[String])
         }
 
-        val internalCommittersFuture = gitHub.collaborators(ownerRepo, gitHub.integrationToken).map(_.value.map(_.\("login").as[String]))
+        val existingCommittersFuture = gitHub.collaborators(ownerRepo, gitHub.integrationToken).map(_.value.map(_.\("login").as[String]))
 
         val externalCommittersFuture = for {
           _ <- prPendingFuture
           prCommitters <- prCommittersFuture
-          internalCommitters <- internalCommittersFuture
-        } yield prCommitters.filterNot(internalCommitters.contains).toSet
+          existingCommitters <- existingCommittersFuture
+        } yield prCommitters.filterNot(existingCommitters.contains).toSet
 
         val committersWithoutClasFuture = for {
           externalCommitters <- externalCommittersFuture
@@ -202,14 +253,14 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
   }
 
   // todo: add some caching
-  private def revalidatePullRequests(signerGitHubId: String)(request: RequestHeader): Future[JsValue] = {
+  private def revalidatePullRequests(signerGitHubId: String)(implicit request: RequestHeader): Future[JsValue] = {
     for {
       repos <- gitHub.allRepos(gitHub.integrationToken)
       repoNames = repos.value.map(_.\("full_name").as[String])
       allPullRequests <- Future.sequence(repoNames.map(ownerRepo => gitHub.pullRequests(ownerRepo, gitHub.integrationToken)))
       pullRequestWithCommitsAndStatus <- Future.sequence(allPullRequests.flatMap(_.value).map(pullRequestWithCommitsAndStatus))
       pullRequestsToBeValidated = pullRequestWithCommitsAndStatus.filter(pullRequestHasContributorAndState(signerGitHubId, "failure"))
-      validation <- validatePullRequests(pullRequestsToBeValidated)(request)
+      validation <- validatePullRequests(pullRequestsToBeValidated)
     } yield validation
   }
 

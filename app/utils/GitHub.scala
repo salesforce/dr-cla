@@ -6,6 +6,8 @@ import javax.inject.Inject
 import play.api.Application
 import play.api.http.{HeaderNames, MimeTypes, Status}
 import play.api.libs.json._
+import play.api.libs.json.Reads._
+import play.api.libs.functional.syntax._
 import play.api.libs.ws.{WS, WSRequest, WSResponse}
 import play.api.mvc.Results.EmptyContent
 
@@ -181,6 +183,29 @@ class GitHub @Inject()(implicit app: Application, ec: ExecutionContext) {
     ws(path, accessToken).get().flatMap(ok[JsArray])
   }
 
+  def orgWebhooks(org: String, accessToken: String): Future[JsArray] = {
+    val path = s"orgs/$org/hooks"
+    ws(path, accessToken).get().flatMap(ok[JsArray])
+  }
+
+  def userOrgMembership(org: String, accessToken: String): Future[JsObject] = {
+    val path = s"user/memberships/orgs/$org"
+    ws(path, accessToken).get().flatMap(ok[JsObject])
+  }
+
+  def addOrgWebhook(org: String, events: Seq[String], url: String, contentType: String, accessToken: String): Future[JsValue] = {
+    val path = s"orgs/$org/hooks"
+    val json = Json.obj(
+      "name" -> "web",
+      "events" -> events,
+      "config" -> Json.obj(
+        "url" -> url,
+        "content_type" -> contentType
+      )
+    )
+    ws(path, accessToken).post(json).flatMap(created)
+  }
+
   private def ok[A](response: WSResponse)(implicit w: Reads[A]): Future[A] = status(Status.OK, response).flatMap { jsValue =>
     jsValue.asOpt[A].fold {
       Future.failed[A](new IllegalStateException("Data was not in the expected form"))
@@ -205,6 +230,22 @@ class GitHub @Inject()(implicit app: Application, ec: ExecutionContext) {
         f(item).map(_ :: values)
       }
     } map (_.reverse)
+  }
+
+}
+
+object GitHub {
+
+  case class Repo(ownerRepo: String)
+
+  object Repo {
+    implicit val jsonReads: Reads[Repo] = (__ \ "full_name").read[String].map(Repo(_))
+  }
+
+  case class Org(login: String, repos: Seq[Repo] = Seq.empty[Repo])
+
+  object Org {
+    implicit val jsonReads: Reads[Org] = (__ \ "login").read[String].map(Org(_))
   }
 
 }

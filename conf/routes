@@ -9,7 +9,10 @@ GET         /signed-cla                    controllers.Application.signedCla
 
 POST        /webhook-pullrequest           controllers.Application.webhookPullRequest
 
+POST        /add-pr-validator-webhook      controllers.Application.addPrValidatorWebhook
+
 GET         /audit                         controllers.Application.audit
+GET         /audit/pr-validator-status     controllers.Application.auditPrValidatorStatus(org: String, encAccessToken: String)
 
 # OAuth
 GET         /_github_oauth_callback        controllers.Application.gitHubOauthCallback(code: String, state: String)

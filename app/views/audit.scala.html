@@ -1,0 +1,37 @@
+@(encAccessToken: String, orgs: Seq[utils.GitHub.Org])
+
+@main("CLA Audit") {
+
+    <h2 class="slds-text-heading--large" style="margin-bottom: 20px;">CLA Audit</h2>
+
+    @orgs.map { org =>
+        <div>
+            <h3>@org.login</h3>
+
+            <div data-href="@routes.Application.auditPrValidatorStatus(org.login, encAccessToken)"></div>
+
+            <ul>
+                @org.repos.map { repo =>
+                    <li>@repo.ownerRepo</li>
+                }
+            </ul>
+        </div>
+    }
+
+    <script>
+        // OMGJS!
+        NodeList.prototype.forEach = Array.prototype.forEach;
+
+        // Find all of the divs with data-href attributes then load and display them
+        document.querySelectorAll("div[data-href]").forEach(function(div) {
+            var link = document.createElement('link');
+            link.rel = 'import';
+            link.href = div.dataset.href;
+            link.onload = function(event) {
+                div.innerHTML = link.import.querySelector('body').innerHTML;
+            };
+            document.head.appendChild(link);
+        });
+    </script>
+
+}
