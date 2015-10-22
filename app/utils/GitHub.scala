@@ -5,9 +5,8 @@ import javax.inject.Inject
 
 import play.api.Application
 import play.api.http.{HeaderNames, MimeTypes, Status}
-import play.api.libs.json._
 import play.api.libs.json.Reads._
-import play.api.libs.functional.syntax._
+import play.api.libs.json._
 import play.api.libs.ws.{WS, WSRequest, WSResponse}
 import play.api.mvc.Results.EmptyContent
 
@@ -204,6 +203,17 @@ class GitHub @Inject()(implicit app: Application, ec: ExecutionContext) {
       )
     )
     ws(path, accessToken).post(json).flatMap(created)
+  }
+
+  def orgMembers(org: String, accessToken: String): Future[JsArray] = {
+    val path = s"orgs/$org/members"
+    ws(path, accessToken).get().flatMap(ok[JsArray])
+  }
+
+  // todo: definitely will need paging
+  def repoCommits(ownerRepo: String, accessToken: String): Future[JsArray] = {
+    val path = s"repos/$ownerRepo/commits"
+    ws(path, accessToken).get().flatMap(ok[JsArray])
   }
 
   private def ok[A](response: WSResponse)(implicit w: Reads[A]): Future[A] = status(Status.OK, response).flatMap { jsValue =>

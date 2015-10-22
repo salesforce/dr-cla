@@ -1,12 +1,10 @@
 package models
 
-import java.util.Date
-
-import jdub.async.{Row, Query, Statement}
+import jdub.async.{Query, Row, Statement}
 import org.joda.time.DateTime
 
 
-case class ClaSignature(id: Int, contact: Contact, signedOn: Date, claVersion: String)
+case class ClaSignature(id: Int, contact: Contact, signedOn: DateTime, claVersion: String)
 
 object ClaSignature {
   def rowToClaSignature(row: Row): ClaSignature = {
@@ -14,7 +12,7 @@ object ClaSignature {
     val signedOn = row.as[DateTime]("signed_on__c")
     val claVersion = row.as[String]("cla_version__c")
     val contact = Contact.rowToContact(row)
-    ClaSignature(id, contact, signedOn.toDate, claVersion)
+    ClaSignature(id, contact, signedOn, claVersion)
   }
 }
 

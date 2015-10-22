@@ -1,11 +1,11 @@
 @(org: String, maybeWebhookUrl: Option[String], encAccessToken: String)
 
 @maybeWebhookUrl.fold {
-    CLA PR Validator is NOT installed
     <form action="@routes.Application.addPrValidatorWebhook" method="post">
         <input type="hidden" name="org" value="@org">
         <input type="hidden" name="encAccessToken" value="@encAccessToken">
-        <button type="submit">Add Webhook</button>
+        <label>CLA Pull Request Validator is NOT installed</label>
+        <button class="slds-button slds-button--neutral slds-button--small" type="submit" style="line-height: 1rem; vertical-align: baseline; min-height: auto;">Add Webhook</button>
     </form>
 } { webhookUrl =>
     CLA PR Validator Installed (<a href="@webhookUrl">details</a>)

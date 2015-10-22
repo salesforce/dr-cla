@@ -1,0 +1,26 @@
+@(externalContributors: Map[String, (Option[ClaSignature], Seq[play.api.libs.json.JsValue])], internalContributors: Map[String, Seq[play.api.libs.json.JsValue]])
+
+Internal Contributors:
+<ul class="slds-list--vertical slds-has-block-links" style="margin-left: 15px;">
+    @internalContributors.map { case (gitHubId, commits) =>
+        <li class="slds-list__item"><a href="https://github.com/@gitHubId" style="display: inline;">@gitHubId</a> (@commits.length commits)</li>
+    }
+</ul>
+
+External Contributors:
+<ul class="slds-list--vertical slds-has-block-links" style="margin-left: 15px;">
+    @externalContributors.map { case (gitHubId, (maybeClaSignature, commits)) =>
+        <li class="slds-list__item" style="margin-top: 4px; margin-bottom: 4px;">
+            <a href="https://github.com/@gitHubId" style="display: inline;">@gitHubId</a>
+
+            (@commits.length commits)
+
+            @maybeClaSignature.fold {
+                <span class="slds-badge" style="background-color: #ff0000; color: #000000; font-weight: bold;">CLA has not been signed</span>
+            } { claSignature =>
+                <span class="slds-badge">CLA signed on @claSignature.signedOn.toString("MMM dd, yyyy")</span>
+            }
+
+        </li>
+    }
+</ul>

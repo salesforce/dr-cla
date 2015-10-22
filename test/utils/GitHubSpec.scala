@@ -1,12 +1,12 @@
 package utils
 
+import java.util.UUID
+
 import modules.{Database, DatabaseMock}
 import org.scalatestplus.play.{OneAppPerSuite, PlaySpec}
 import play.api.Mode
 import play.api.inject._
 import play.api.inject.guice.GuiceApplicationBuilder
-import play.api.libs.json.{JsArray, JsString, Json}
-import play.api.libs.ws.{WS, WSAuthScheme}
 import play.api.test.Helpers._
 
 import scala.concurrent.ExecutionContext
@@ -126,7 +126,8 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
 
   "GitHub.addOrgWebhook" must {
     "create an org Webhook" in {
-      val status = await(gitHub.addOrgWebhook("foobar-test", Seq("pull_request"), "http://localhost:9000/foo", "json", gitHub.integrationToken))
+      val uuid = UUID.randomUUID().toString
+      val status = await(gitHub.addOrgWebhook("foobar-test", Seq("pull_request"), s"http://localhost:9000/$uuid", "json", gitHub.integrationToken))
       (status \ "active").as[Boolean] must be (true)
     }
   }
@@ -142,6 +143,20 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
     "get the users org membership" in {
       val membership = await(gitHub.userOrgMembership("foobar-test", gitHub.integrationToken))
       (membership \ "role").asOpt[String] must be ('defined)
+    }
+  }
+
+  "GitHub.orgMembers" must {
+    "get the org members" in {
+      val members = await(gitHub.orgMembers("foobar-test", gitHub.integrationToken))
+      members.value.length must be > 0
+    }
+  }
+
+  "GitHub.repoCommits" must {
+    "get the repo commits" in {
+      val commits = await(gitHub.repoCommits("foobar-test/asdf", gitHub.integrationToken))
+      commits.value.length must be > 0
     }
   }
 

@@ -1,7 +1,5 @@
 package models
 
-import java.util.UUID
-
 import modules.{Database, DatabaseImpl}
 import org.scalatestplus.play.{OneAppPerSuite, PlaySpec}
 import play.api.Mode

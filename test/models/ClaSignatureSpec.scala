@@ -1,16 +1,12 @@
 package models
 
-import java.util.{Date, UUID}
-
 import modules.{Database, DatabaseImpl}
-import org.flywaydb.play.PlayInitializer
+import org.joda.time.DateTime
 import org.scalatestplus.play.{OneAppPerSuite, PlaySpec}
-import play.api.{Application, GlobalSettings, Mode}
+import play.api.Mode
 import play.api.inject.bind
 import play.api.inject.guice.GuiceApplicationBuilder
-import play.api.test.FakeRequest
 import play.api.test.Helpers._
-import play.core.WebCommands
 
 class ClaSignatureSpec extends PlaySpec with OneAppPerSuite {
 
@@ -36,7 +32,7 @@ class ClaSignatureSpec extends PlaySpec with OneAppPerSuite {
     "be creatable" in {
       val contact = Contact(-1, "foo", "bar", "foo@bar.com", "foobar")
       await(db.execute(CreateContact(contact)))
-      val numRows = await(db.execute(CreateClaSignature(ClaSignature(-1, contact, new Date(), "0.0.0"))))
+      val numRows = await(db.execute(CreateClaSignature(ClaSignature(-1, contact, new DateTime(), "0.0.0"))))
       numRows mustEqual 1
     }
     "be queryable with one github id" in {

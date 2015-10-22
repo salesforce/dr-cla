@@ -9,8 +9,8 @@ import com.github.mauricio.async.db.postgresql.pool.PostgreSQLConnectionFactory
 import com.github.mauricio.async.db.{Connection, QueryResult}
 import jdub.async.{RawQuery, Statement}
 import org.slf4j.LoggerFactory
-import play.api.{Configuration, Environment}
 import play.api.inject.{ApplicationLifecycle, Binding, Module}
+import play.api.{Configuration, Environment}
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, ExecutionContext, Future}

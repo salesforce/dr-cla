@@ -13,6 +13,7 @@ POST        /add-pr-validator-webhook      controllers.Application.addPrValidato
 
 GET         /audit                         controllers.Application.audit
 GET         /audit/pr-validator-status     controllers.Application.auditPrValidatorStatus(org: String, encAccessToken: String)
+GET         /audit/contributors            controllers.Application.auditContributors(org: String, ownerRepo: String, encAccessToken: String)
 
 # OAuth
 GET         /_github_oauth_callback        controllers.Application.gitHubOauthCallback(code: String, state: String)

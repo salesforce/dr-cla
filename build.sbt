@@ -19,7 +19,7 @@ libraryDependencies ++= Seq(
   "com.kyleu"            %% "jdub-async"                         % "1.0",
 
   "org.webjars"          %% "webjars-play"                       % "2.4.0-1",
-  "org.webjars"          %  "salesforce-lightning-design-system" % "0.9.2",
+  "org.webjars"          %  "salesforce-lightning-design-system" % "0.10.1",
   "org.webjars"          %  "octicons"                           % "3.1.0",
   "org.webjars.bower"    %  "signature_pad"                      % "1.5.1",
 

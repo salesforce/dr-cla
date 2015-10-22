@@ -5,17 +5,48 @@
     <h2 class="slds-text-heading--large" style="margin-bottom: 20px;">CLA Audit</h2>
 
     @orgs.map { org =>
-        <div>
-            <h3>@org.login</h3>
+        <ul class="slds-list--vertical slds-has-dividers">
+            <li class="slds-list__item">
+                <div class="slds-tile">
+                    <p class="slds-tile__title slds-truncate">GitHub Organization: <a href="https://github.com/@org.login">@org.login</a></p>
+                    <div class="slds-tile__detail slds-text-body--small">
+                        <ul class="slds-tile__detail slds-list--horizontal slds-has-dividers slds-text-body--small">
+                            <li class="slds-truncate slds-list__item">@org.repos.length Repos</li>
+                            <li class="slds-truncate slds-list__item">
+                                <div data-href="@routes.Application.auditPrValidatorStatus(org.login, encAccessToken)">
+                                    <p>
+                                        Loading Pull Request Validator Status...
+                                        <img src="@StaticWebJarAssets.locateUrl("assets/images/spinners/slds_spinner.gif")" alt="Loading..." style="height: 1rem; vertical-align: top;" />
+                                    </p>
+                                </div>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
 
-            <div data-href="@routes.Application.auditPrValidatorStatus(org.login, encAccessToken)"></div>
-
-            <ul>
-                @org.repos.map { repo =>
-                    <li>@repo.ownerRepo</li>
-                }
-            </ul>
-        </div>
+                    @org.repos.map { repo =>
+                        <div class="slds-media slds-tile">
+                            <div class="slds-media__figure">
+                                <svg aria-hidden="true" class="slds-icon slds-icon-standard-canvas slds-timeline__icon"></svg>
+                                <span class="octicon octicon-repo"></span>
+                            </div>
+                            <div class="slds-media__body">
+                                <div class="slds-grid slds-grid--align-spread slds-has-flexi-truncate">
+                                    <p class="slds-tile__title slds-truncate"><a href="https://github.com/@repo.ownerRepo">@repo.ownerRepo</a></p>
+                                </div>
+                                <div class="slds-tile__detail slds-text-body--small">
+                                    <div data-href="@routes.Application.auditContributors(org.login, repo.ownerRepo, encAccessToken)">
+                                        <p>
+                                            Loading Contributor CLA Statuses...
+                                            <img src="@StaticWebJarAssets.locateUrl("assets/images/spinners/slds_spinner.gif")" alt="Loading..." style="height: 1rem; vertical-align: top;" />
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+            </li>
+        </ul>
     }
 
     <script>
@@ -24,13 +55,13 @@
 
         // Find all of the divs with data-href attributes then load and display them
         document.querySelectorAll("div[data-href]").forEach(function(div) {
-            var link = document.createElement('link');
-            link.rel = 'import';
-            link.href = div.dataset.href;
-            link.onload = function(event) {
-                div.innerHTML = link.import.querySelector('body').innerHTML;
+            var xhr = new XMLHttpRequest();
+            xhr.open('GET', div.dataset.href, true);
+            xhr.responseType = 'text';
+            xhr.onload = function(e) {
+                div.innerHTML = e.target.response;
             };
-            document.head.appendChild(link);
+            xhr.send();
         });
     </script>
 

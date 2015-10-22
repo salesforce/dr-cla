@@ -1,13 +1,13 @@
 package controllers
 
-import java.util.Date
 import javax.inject.Inject
 
 import models._
 import modules.Database
+import org.joda.time.DateTime
 import play.api.Environment
 import play.api.libs.Crypto
-import play.api.libs.json.{JsArray, Json, JsObject, JsValue}
+import play.api.libs.json.{JsArray, JsObject, JsValue, Json}
 import play.api.mvc._
 import utils.GitHub
 
@@ -60,7 +60,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
               val (firstName, lastName) = Contact.fullNameToFirstAndLast(fullName)
               Contact(-1, firstName, lastName, email, username)
             }
-          } yield ClaSignature(-1, contact, new Date(), claVersion)
+          } yield ClaSignature(-1, contact, new DateTime(), claVersion)
         } else {
           Future.failed(new IllegalStateException("The CLA was not agreed to."))
         }
@@ -95,10 +95,20 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
 
   def webhookPullRequest = Action.async(parse.json) { implicit request =>
     // todo: maybe filter on "action" = "opened", "reopened”, or “synchronize”
-    for {
-      pullRequestWithCommitsAndStatus <- pullRequestWithCommitsAndStatus((request.body \ "pull_request").as[JsValue])
-      validate <- validatePullRequests(Seq(pullRequestWithCommitsAndStatus))
-    } yield Ok
+
+    (request.body \ "pull_request").asOpt[JsValue].fold {
+      // the webhook call didn't have a pull request - it was likely a test hook
+      (request.body \ "zen").asOpt[String].fold {
+        Future.successful(BadRequest("Was this a test?  If so, where is your zen?"))
+      } { zen =>
+        Future.successful(Ok(zen))
+      }
+    } { pullRequest =>
+      for {
+        pullRequestWithCommitsAndStatus <- pullRequestWithCommitsAndStatus(pullRequest)
+        validate <- validatePullRequests(Seq(pullRequestWithCommitsAndStatus))
+      } yield Ok
+    }
   }
 
   def audit = Action.async { implicit request =>
@@ -133,6 +143,39 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
         s"https://github.com/organizations/$org/settings/hooks/$id"
       }
       Ok(views.html.prValidatorStatus(org, maybeWebhookUrl, encAccessToken))
+    } recover {
+      case e: Exception => InternalServerError("Could not fetch the org's Webhooks")
+    }
+  }
+
+  def auditContributors(org: String, ownerRepo: String, encAccessToken: String) = Action.async { implicit request =>
+    val accessToken = Crypto.decryptAES(encAccessToken)
+
+    // maybe this should be repo collaborators instead?
+    val internalContributorsFuture = gitHub.orgMembers(org, accessToken)
+
+    val repoCommitsFuture = gitHub.repoCommits(ownerRepo, accessToken)
+
+    for {
+      internalContributors <- internalContributorsFuture.map(_.value.map(_.\("login").as[String]).distinct.toSet)
+      repoCommits <- repoCommitsFuture
+      authors = repoCommits.value.map(_.\("author").\("login").as[String]).distinct.toSet
+      externalContributors = authors.diff(internalContributors)
+      clasForExternalContributors <- db.query(GetClaSignatures(externalContributors))
+    } yield {
+
+      val externalContributorsDetails = externalContributors.map { gitHubId =>
+        val maybeClaSignature = clasForExternalContributors.find(_.contact.gitHubId == gitHubId)
+        val commits = repoCommits.value.filter(_.\("author").\("login").as[String] == gitHubId)
+        gitHubId -> (maybeClaSignature, commits)
+      }.toMap
+
+      val internalContributorsDetails = internalContributors.map { gitHubId =>
+        val commits = repoCommits.value.filter(_.\("author").\("login").as[String] == gitHubId)
+        gitHubId -> commits
+      }.toMap
+
+      Ok(views.html.auditRepo(externalContributorsDetails, internalContributorsDetails))
     }
   }
 
