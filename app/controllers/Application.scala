@@ -4,7 +4,7 @@ import javax.inject.Inject
 
 import models._
 import modules.Database
-import org.joda.time.DateTime
+import org.joda.time.LocalDateTime
 import play.api.Environment
 import play.api.libs.Crypto
 import play.api.libs.json.{JsArray, JsObject, JsValue, Json}
@@ -60,7 +60,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
               val (firstName, lastName) = Contact.fullNameToFirstAndLast(fullName)
               Contact(-1, firstName, lastName, email, username)
             }
-          } yield ClaSignature(-1, contact, new DateTime(), claVersion)
+          } yield ClaSignature(-1, contact, new LocalDateTime(), claVersion)
         } else {
           Future.failed(new IllegalStateException("The CLA was not agreed to."))
         }

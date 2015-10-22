@@ -1,15 +1,15 @@
 package models
 
 import jdub.async.{Query, Row, Statement}
-import org.joda.time.DateTime
+import org.joda.time.LocalDateTime
 
 
-case class ClaSignature(id: Int, contact: Contact, signedOn: DateTime, claVersion: String)
+case class ClaSignature(id: Int, contact: Contact, signedOn: LocalDateTime, claVersion: String)
 
 object ClaSignature {
   def rowToClaSignature(row: Row): ClaSignature = {
     val id = row.as[Int]("cla_id")
-    val signedOn = row.as[DateTime]("signed_on__c")
+    val signedOn = row.as[LocalDateTime]("signed_on__c")
     val claVersion = row.as[String]("cla_version__c")
     val contact = Contact.rowToContact(row)
     ClaSignature(id, contact, signedOn, claVersion)

@@ -52,7 +52,7 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
   "GitHub.getPullRequest" must {
     "get a PR" in {
       val pr = await(gitHub.getPullRequest("foobar-test/asdf", 1, gitHub.integrationToken))
-      (pr \ "id").as[Int] must equal (47550530)
+      (pr \ "id").as[Int] must equal (48517065)
     }
   }
 
@@ -112,7 +112,7 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
 
   "GitHub.commitStatus" must {
     "get the commit status" in {
-      val commitStatus = await(gitHub.commitStatus("foobar-test/asdf", "b8a2750a3dbe96ff2209d2b754ba278bc14b7b45", gitHub.integrationToken))
+      val commitStatus = await(gitHub.commitStatus("foobar-test/asdf", "cf47c487ba8e8d8444c77b9e661267675b6b04ce", gitHub.integrationToken))
       (commitStatus \ "state").as[String] must equal ("failure")
     }
   }

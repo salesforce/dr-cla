@@ -1,7 +1,7 @@
 package models
 
 import modules.{Database, DatabaseImpl}
-import org.joda.time.DateTime
+import org.joda.time.LocalDateTime
 import org.scalatestplus.play.{OneAppPerSuite, PlaySpec}
 import play.api.Mode
 import play.api.inject.bind
@@ -32,7 +32,7 @@ class ClaSignatureSpec extends PlaySpec with OneAppPerSuite {
     "be creatable" in {
       val contact = Contact(-1, "foo", "bar", "foo@bar.com", "foobar")
       await(db.execute(CreateContact(contact)))
-      val numRows = await(db.execute(CreateClaSignature(ClaSignature(-1, contact, new DateTime(), "0.0.0"))))
+      val numRows = await(db.execute(CreateClaSignature(ClaSignature(-1, contact, new LocalDateTime(), "0.0.0"))))
       numRows mustEqual 1
     }
     "be queryable with one github id" in {
