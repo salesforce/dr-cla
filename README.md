@@ -15,6 +15,7 @@ This application is built with:
 - Reactive I/O (Non-Blocking)
 
 To work on this app locally:
+
 1. Create a local Postgres database:
 ```
 $ psql
