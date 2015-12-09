@@ -18,7 +18,9 @@ To work on this app locally:
 1. Create a local Postgres database:
     ```sh
         $ psql
+        
         # CREATE ROLE salesforcecla LOGIN password 'password';
+        
         # CREATE DATABASE salesforcecla ENCODING 'UTF8' OWNER salesforcecla;
     ```
 2. Start the web app:
