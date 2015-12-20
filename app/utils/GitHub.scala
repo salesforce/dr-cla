@@ -181,6 +181,77 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
     ws(path, accessToken).get().flatMap(ok[JsArray])
   }
 
+  def getAllLabels(ownerRepo: String, accessToken: String): Future[JsArray] = {
+    val path = s"repos/$ownerRepo/labels"
+    ws(path, accessToken).get().flatMap(ok[JsArray])
+  }
+
+  def createLabel(ownerRepo: String, name: String, color: String, accessToken: String): Future[JsValue] = {
+    val path = s"repos/$ownerRepo/labels"
+
+    val json = Json.obj(
+      "name" -> name,
+      "color" -> color
+    )
+    ws(path, accessToken).post(json).flatMap(created)
+  }
+
+  def createLabels(ownerRepo: String, labels: Map[String,String], accessToken: String): Future[Seq[JsValue]] = {
+    val labelCreateFutures = labels.map { labelColor =>
+      createLabel(ownerRepo, labelColor._1, labelColor._2, accessToken)
+    }
+    Future.sequence(labelCreateFutures.toList)
+  }
+
+  def getIssueLabels(ownerRepo: String, issueNumber: Int, accessToken: String): Future[JsArray] = {
+    val path = s"repos/$ownerRepo/issues/$issueNumber/labels"
+    ws(path, accessToken).get().flatMap(ok[JsArray])
+  }
+
+  def applyLabel(ownerRepo: String, name: String, issueNumber: Int, accessToken: String): Future[JsValue] = {
+    val path = s"repos/$ownerRepo/issues/$issueNumber/labels"
+    val json =  Json.arr(
+      name
+    )
+    ws(path, accessToken).post(json).flatMap(ok[JsValue])
+  }
+
+  def applyLabelSafe(ownerRepo: String, name: String, issueNumber: Int, accessToken: String): Future[JsValue] = {
+    val issueLabelsFuture = getIssueLabels(ownerRepo, issueNumber, accessToken).map(_.value.map(_.\("name").as[String]).distinct.toList)
+    val labelAppliesFuture: Future[JsValue] = issueLabelsFuture.flatMap { labels =>
+      if (!labels.contains(name)) {
+        applyLabel(ownerRepo, name, issueNumber, accessToken)
+      } else {
+        Future(JsNull)
+      }
+    }
+    labelAppliesFuture
+  }
+
+  def removeLabel(ownerRepo: String, name: String, issueNumber: Int, accessToken: String): Future[JsValue] = {
+    val path = s"repos/$ownerRepo/issues/$issueNumber/labels/$name"
+    ws(path, accessToken).delete().flatMap(ok[JsValue])
+  }
+
+  def removeLabelSafe(ownerRepo: String, name: String, issueNumber: Int, accessToken: String): Future[JsValue] = {
+    val issueLabelsFuture = getIssueLabels(ownerRepo, issueNumber, accessToken).map(_.value.map(_.\("name").as[String]).distinct.toList)
+    val labelRemovesFuture: Future[JsValue] = issueLabelsFuture.flatMap { labels =>
+      if (labels.contains(name)) {
+        removeLabel(ownerRepo, name, issueNumber, accessToken)
+      } else {
+        Future(JsNull)
+      }
+    }
+    labelRemovesFuture
+  }
+
+  def toggleLabelSafe(ownerRepo: String, newLabel: String, oldLabel: String, remove: Boolean, issueNumber: Int, accessToken: String): Future[JsValue] = {
+    if (remove) {
+      removeLabelSafe(ownerRepo, oldLabel, issueNumber, accessToken)
+    }
+    applyLabelSafe(ownerRepo, newLabel, issueNumber, accessToken)
+  }
+
   def orgWebhooks(org: String, accessToken: String): Future[JsArray] = {
     val path = s"orgs/$org/hooks"
     ws(path, accessToken).get().flatMap(ok[JsArray])

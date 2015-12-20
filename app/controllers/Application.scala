@@ -276,6 +276,15 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
           externalCommitters.filterNot(clasForCommitters.map(_.contact.gitHubId).contains)
         }
 
+        val repoLabelsFuture = gitHub.getAllLabels(ownerRepo, gitHub.integrationToken).map(_.value.map(_.\("name").as[String]).distinct.toList)
+
+        val labelMap = Map(("cla:missing","c40d0d"),("cla:signed","5ebc41"))
+
+        val labelCreatesFuture: Future[Seq[JsValue]] = repoLabelsFuture.flatMap { labels =>
+          val labelsToCreate: Seq[String] = labelMap.keys.toList.diff(labels)
+          gitHub.createLabels(ownerRepo, labelMap.filterKeys(labelsToCreate.contains), gitHub.integrationToken)
+        }
+
         committersWithoutClasFuture.flatMap { committersWithoutClas =>
 
           val state = if (committersWithoutClas.isEmpty) "success" else "failure"
@@ -287,11 +296,18 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
             gitHub.issueComments(ownerRepo, prNumber, gitHub.integrationToken).flatMap { comments =>
               val alreadyCommented = comments.value.exists(_.\("user").\("login").as[String] == integrationUserId)
 
-              if (committersWithoutClas.nonEmpty && !alreadyCommented) {
-                val body = s"Thanks for the contribution!  Before we can merge this, we need ${committersWithoutClas.map(" @" + _).mkString} to [sign the Salesforce Contributor License Agreement]($claUrl)."
-                gitHub.commentOnIssue(ownerRepo, prNumber, body, gitHub.integrationToken)
+              if (committersWithoutClas.nonEmpty) {
+                gitHub.toggleLabelSafe(ownerRepo, "cla:missing", "cla:signed", alreadyCommented, prNumber, gitHub.integrationToken)
+
+                if(!alreadyCommented) {
+                  val body = s"Thanks for the contribution!  Before we can merge this, we need ${committersWithoutClas.map(" @" + _).mkString} to [sign the Salesforce Contributor License Agreement]($claUrl)."
+                  gitHub.commentOnIssue(ownerRepo, prNumber, body, gitHub.integrationToken)
+                } else {
+                  Future.successful(status)
+                }
               }
               else {
+                gitHub.toggleLabelSafe(ownerRepo, "cla:signed", "cla:missing", alreadyCommented, prNumber, gitHub.integrationToken)
                 Future.successful(status)
               }
             }
