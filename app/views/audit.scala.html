@@ -1,4 +1,4 @@
-@(encAccessToken: String, orgs: Seq[utils.GitHub.Org])
+@(encAccessToken: String, orgs: Seq[utils.GitHub.Org])(implicit staticWebJarAssets: StaticWebJarAssets)
 
 @main("CLA Audit") {
 
@@ -16,7 +16,7 @@
                                 <div data-href="@routes.Application.auditPrValidatorStatus(org.login, encAccessToken)">
                                     <p>
                                         Loading Pull Request Validator Status...
-                                        <img src="@StaticWebJarAssets.locateUrl("assets/images/spinners/slds_spinner.gif")" alt="Loading..." style="height: 1rem; vertical-align: top;" />
+                                        <img src="@staticWebJarAssets.locateUrl("assets/images/spinners/slds_spinner.gif")" alt="Loading..." style="height: 1rem; vertical-align: top;" />
                                     </p>
                                 </div>
                             </li>
@@ -38,7 +38,7 @@
                                     <div data-href="@routes.Application.auditContributors(org.login, repo.ownerRepo, encAccessToken)">
                                         <p>
                                             Loading Contributor CLA Statuses...
-                                            <img src="@StaticWebJarAssets.locateUrl("assets/images/spinners/slds_spinner.gif")" alt="Loading..." style="height: 1rem; vertical-align: top;" />
+                                            <img src="@staticWebJarAssets.locateUrl("assets/images/spinners/slds_spinner.gif")" alt="Loading..." style="height: 1rem; vertical-align: top;" />
                                         </p>
                                     </div>
                                 </div>

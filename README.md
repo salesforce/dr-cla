@@ -21,7 +21,7 @@ Local Dev Setup
 1. Install Java 8
 1. Install Postgres
 1. Install ngrok
-1. Start ngrok: `ngrok 9000`
+1. Start ngrok: `ngrok http 9000`
 1. Create local Postgres databases:
     ```
     $ psql

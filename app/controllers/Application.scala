@@ -6,17 +6,15 @@ import models._
 import modules.Database
 import org.joda.time.LocalDateTime
 import play.api.Environment
-import play.api.libs.Crypto
 import play.api.libs.json.{JsArray, JsObject, JsValue, Json}
 import play.api.mvc._
-import utils.GitHub
+import utils.{Crypto, GitHub}
 
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.Future
+import scala.concurrent.{ExecutionContext, Future}
 import scala.io.Source
 
 
-class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) extends Controller {
+class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, crypto: Crypto) (implicit staticWebJarAssets: StaticWebJarAssets, ec: ExecutionContext) extends Controller {
 
   val claVersions = Set("0.0")
   val latestClaVersion = claVersions.head
@@ -26,7 +24,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
   // state is used for the URL to redirect to
   def gitHubOauthCallback(code: String, state: String) = Action.async { request =>
     gitHub.accessToken(code).map { accessToken =>
-      val encAccessToken = Crypto.encryptAES(accessToken)
+      val encAccessToken = crypto.encryptAES(accessToken)
       Redirect(state).flashing("encAccessToken" -> encAccessToken)
     } recover {
       case e: utils.UnauthorizedError => Redirect(state).flashing("error" -> e.getMessage)
@@ -50,7 +48,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
       agreeToCLA <- request.body.get("agreeToCLA").flatMap(_.headOption)
     } yield {
         if (agreeToCLA == "on") {
-          val gitHubToken = Crypto.decryptAES(encGitHubToken)
+          val gitHubToken = crypto.decryptAES(encGitHubToken)
 
           for {
             userInfo <- gitHub.userInfo(gitHubToken)
@@ -90,7 +88,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
   }
 
   def signedCla = Action {
-    Ok(views.html.claSigned())
+    Ok(views.html.claSigned.apply)
   }
 
   def webhookPullRequest = Action.async(parse.json) { implicit request =>
@@ -116,7 +114,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
       maybeGitHubAuthInfo.fold {
         Future.successful(Redirect(gitHubAuthUrl(Seq("read:org", "admin:org_hook"), routes.Application.audit().absoluteURL())))
       } { gitHubAuthInfo =>
-        val accessToken = Crypto.decryptAES(gitHubAuthInfo.encAuthToken)
+        val accessToken = crypto.decryptAES(gitHubAuthInfo.encAuthToken)
 
         def fetchOrgRepos(org: GitHub.Org): Future[GitHub.Org] = {
           gitHub.orgRepos(org.login, accessToken).map(_.as[Seq[GitHub.Repo]]).map(repos => org.copy(repos = repos))
@@ -133,7 +131,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
   }
 
   def auditPrValidatorStatus(org: String, encAccessToken: String) = Action.async { implicit request =>
-    val accessToken = Crypto.decryptAES(encAccessToken)
+    val accessToken = crypto.decryptAES(encAccessToken)
 
     gitHub.orgWebhooks(org, accessToken).map { webhooks =>
       val webhookUrl = routes.Application.webhookPullRequest().absoluteURL()
@@ -149,7 +147,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
   }
 
   def auditContributors(org: String, ownerRepo: String, encAccessToken: String) = Action.async { implicit request =>
-    val accessToken = Crypto.decryptAES(encAccessToken)
+    val accessToken = crypto.decryptAES(encAccessToken)
 
     // maybe this should be repo collaborators instead?
     val internalContributorsFuture = gitHub.orgMembers(org, accessToken)
@@ -185,7 +183,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
 
     (maybeOrg, maybeEncAccessToken) match {
       case (Some(org), Some(encAccessToken)) =>
-        val accessToken = Crypto.decryptAES(encAccessToken)
+        val accessToken = crypto.decryptAES(encAccessToken)
         val webhookUrl = routes.Application.webhookPullRequest().absoluteURL()
         gitHub.addOrgWebhook(org, Seq("pull_request"), webhookUrl, "json", accessToken).map { _ =>
           Redirect(routes.Application.audit())
@@ -199,7 +197,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database) ext
     request.flash.get("encAccessToken").fold {
       Future.successful[Option[GitHubAuthInfo]](None)
     } { encAccessToken =>
-      val accessToken = Crypto.decryptAES(encAccessToken)
+      val accessToken = crypto.decryptAES(encAccessToken)
       gitHub.userInfo(accessToken).map { userInfo =>
         val username = (userInfo \ "login").as[String]
         val maybeFullName = (userInfo \ "name").asOpt[String]

@@ -1,46 +1,46 @@
-@(title: String)(content: Html)
+@(title: String)(content: Html)(implicit staticWebJarAssets: StaticWebJarAssets)
 <!DOCTYPE html>
 <html>
     <head>
         <title>@title</title>
-        <link rel="stylesheet" href="@StaticWebJarAssets.locateUrl("assets/styles/salesforce-lightning-design-system.css")">
-        <link rel="stylesheet" href="@StaticWebJarAssets.locateUrl("octicons/octicons.css")">
+        <link rel="stylesheet" href="@staticWebJarAssets.locateUrl("assets/styles/salesforce-lightning-design-system.css")">
+        <link rel="stylesheet" href="@staticWebJarAssets.locateUrl("octicons/octicons.css")">
         <style>
         @@font-face {
             font-family: "Salesforce Sans";
-            src: url("@StaticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-Light.woff2")") format("woff2"), url("@StaticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-Light.woff")") format("woff");
+            src: url("@staticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-Light.woff2")") format("woff2"), url("@staticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-Light.woff")") format("woff");
             font-weight: 300;
         }
 
         @@font-face {
             font-family: "Salesforce Sans";
-            src: url("@StaticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-LightItalic.woff2")") format("woff2"), url("@StaticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-LightItalic.woff")") format("woff");
+            src: url("@staticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-LightItalic.woff2")") format("woff2"), url("@staticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-LightItalic.woff")") format("woff");
             font-style: italic;
             font-weight: 300;
         }
 
         @@font-face {
             font-family: "Salesforce Sans";
-            src: url("@StaticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-Regular.woff2")") format("woff2"), url("@StaticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-Regular.woff")") format("woff");
+            src: url("@staticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-Regular.woff2")") format("woff2"), url("@staticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-Regular.woff")") format("woff");
             font-weight: 400;
         }
 
         @@font-face {
             font-family: "Salesforce Sans";
-            src: url("@StaticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-Italic.woff2")") format("woff2"), url("@StaticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-Italic.woff")") format("woff");
+            src: url("@staticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-Italic.woff2")") format("woff2"), url("@staticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-Italic.woff")") format("woff");
             font-style: italic;
             font-weight: 400;
         }
 
         @@font-face {
             font-family: "Salesforce Sans";
-            src: url("@StaticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-Bold.woff2")") format("woff2"), url("@StaticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-Bold.woff")") format("woff");
+            src: url("@staticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-Bold.woff2")") format("woff2"), url("@staticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-Bold.woff")") format("woff");
             font-weight: 700;
         }
 
         @@font-face {
             font-family: "Salesforce Sans";
-            src: url("@StaticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-BoldItalic.woff2")") format("woff2"), url("@StaticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-BoldItalic.woff")") format("woff");
+            src: url("@staticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-BoldItalic.woff2")") format("woff2"), url("@staticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-BoldItalic.woff")") format("woff");
             font-style: italic;
             font-weight: 700;
         }

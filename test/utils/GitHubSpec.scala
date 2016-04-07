@@ -7,10 +7,10 @@ import org.scalatestplus.play.{OneAppPerSuite, PlaySpec}
 import play.api.Mode
 import play.api.inject._
 import play.api.inject.guice.GuiceApplicationBuilder
+import play.api.libs.ws.WSClient
 import play.api.test.Helpers._
 
 import scala.concurrent.ExecutionContext
-import scala.concurrent.ExecutionContext.Implicits.global
 
 
 class GitHubSpec extends PlaySpec with OneAppPerSuite {
@@ -25,7 +25,9 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
     .in(Mode.Test)
     .build()
 
-  val gitHub = new GitHub()(app, ExecutionContext.global)
+  val wsClient = app.injector.instanceOf[WSClient]
+
+  val gitHub = new GitHub(app.configuration, wsClient)(ExecutionContext.global)
 
   "GitHub.allRepos" must {
     "fetch all the repos with 7 pages" in {

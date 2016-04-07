@@ -3,24 +3,24 @@ package utils
 import java.net.URL
 import javax.inject.Inject
 
-import play.api.Application
+import play.api.{Application, Configuration}
 import play.api.http.{HeaderNames, MimeTypes, Status}
 import play.api.libs.json.Reads._
 import play.api.libs.json._
-import play.api.libs.ws.{WS, WSRequest, WSResponse}
+import play.api.libs.ws.{WSClient, WSRequest, WSResponse}
 import play.api.mvc.Results.EmptyContent
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.language.implicitConversions
 
-class GitHub @Inject()(implicit app: Application, ec: ExecutionContext) {
+class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec: ExecutionContext) {
 
-  val clientId = app.configuration.getString("github.oauth.client-id").get
-  val clientSecret = app.configuration.getString("github.oauth.client-secret").get
-  val integrationToken = app.configuration.getString("github.token").get
+  val clientId = configuration.getString("github.oauth.client-id").get
+  val clientSecret = configuration.getString("github.oauth.client-secret").get
+  val integrationToken = configuration.getString("github.token").get
 
   def ws(path: String, accessToken: String): WSRequest = {
-    WS
+    ws
       .url(s"https://api.github.com/$path")
       .withHeaders(
         HeaderNames.AUTHORIZATION -> s"token $accessToken",
@@ -29,7 +29,7 @@ class GitHub @Inject()(implicit app: Application, ec: ExecutionContext) {
   }
 
   def accessToken(code: String): Future[String] = {
-    val wsFuture = WS.url("https://github.com/login/oauth/access_token").withQueryString(
+    val wsFuture = ws.url("https://github.com/login/oauth/access_token").withQueryString(
       "client_id" -> clientId,
       "client_secret" -> clientSecret,
       "code" -> code
@@ -54,8 +54,7 @@ class GitHub @Inject()(implicit app: Application, ec: ExecutionContext) {
       case Right(org) => s"orgs/$org/repos"
     }
 
-    import org.jboss.netty.handler.codec.http.QueryStringDecoder
-
+    import io.netty.handler.codec.http.QueryStringDecoder
     import collection.JavaConverters._
 
     implicit class Regex(sc: StringContext) {
@@ -73,7 +72,7 @@ class GitHub @Inject()(implicit app: Application, ec: ExecutionContext) {
 
       def urlToPage(urlString: String): Int = {
         val url = new URL(urlString)
-        val params = new QueryStringDecoder(url.toURI.getRawQuery, false).getParameters.asScala.mapValues(_.asScala.toSeq).toMap
+        val params = new QueryStringDecoder(url.toURI.getRawQuery, false).parameters.asScala.mapValues(_.asScala.toSeq).toMap
         params("page").head.toInt
       }
 

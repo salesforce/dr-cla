@@ -14,6 +14,6 @@ CREATE TABLE salesforce.Contact (
 CREATE TABLE salesforce.CLA_Signature__c (
   id SERIAL PRIMARY KEY,
   contact__r__github_id__c VARCHAR NOT NULL REFERENCES salesforce.Contact (github_id__c),
-  signed_on__c TIMESTAMP NOT NULL,
+  signed_on__c TIMESTAMP WITHOUT TIME ZONE NOT NULL,
   cla_version__c VARCHAR NOT NULL
 );
