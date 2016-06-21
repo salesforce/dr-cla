@@ -20,5 +20,5 @@ class OnlyHttpsFilter @Inject() (implicit val mat: Materializer, ec: ExecutionCo
 }
 
 class Filters @Inject() (gzip: GzipFilter, onlyHttpsFilter: OnlyHttpsFilter) extends HttpFilters {
-  val filters = Seq(gzip, onlyHttpsFilter)
+  val filters = Seq(gzip)
 }

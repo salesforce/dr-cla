@@ -321,4 +321,8 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
     claText
   }
 
+  def wellKnown() = Action {
+    Ok("hQ0bsarGZQ7cLBgYsFp_wCVCWPahthlZvJNPervrHXI.zdmFBXG8SrlgihnxvbwrjmwWUVG_yN7RhZBLE0xFGpI")
+  }
+
 }
