@@ -6,7 +6,7 @@ import javax.inject.{Inject, Singleton}
 import com.github.mauricio.async.db.pool.{ConnectionPool, PoolConfiguration}
 import com.github.mauricio.async.db.postgresql.PostgreSQLConnection
 import com.github.mauricio.async.db.postgresql.pool.PostgreSQLConnectionFactory
-import com.github.mauricio.async.db.{Connection, QueryResult}
+import com.github.mauricio.async.db.{Connection, QueryResult, SSLConfiguration}
 import jdub.async.{RawQuery, Statement}
 import org.slf4j.LoggerFactory
 import play.api.inject.{ApplicationLifecycle, Binding, Module}
@@ -36,6 +36,7 @@ trait Database {
 // based on: https://github.com/KyleU/jdub-async/blob/master/src/main/scala/jdub/async/Database.scala
 @Singleton
 class DatabaseImpl @Inject()(lifecycle: ApplicationLifecycle, playConfig: Configuration) (implicit ec: ExecutionContext) extends Database {
+
   val log = LoggerFactory.getLogger(this.getClass)
 
   // create the pool
@@ -63,7 +64,9 @@ class DatabaseImpl @Inject()(lifecycle: ApplicationLifecycle, playConfig: Config
   val maxIdleMillis = playConfig.getInt("db.default.maxIdleMillis").getOrElse(10)
   val maxQueueSize = playConfig.getInt("db.default.maxQueueSize").getOrElse(1000)
 
-  val configuration = com.github.mauricio.async.db.Configuration(username, dbUri.getHost, dbUri.getPort, maybePassword, maybeDbName)
+  val sslConfig = SSLConfiguration(playConfig.getString("db.default.sslmode").fold(Map.empty[String, String])(sslmode => Map("sslmode" -> sslmode)))
+
+  val configuration = com.github.mauricio.async.db.Configuration(username, dbUri.getHost, dbUri.getPort, maybePassword, maybeDbName, sslConfig)
   val factory = new PostgreSQLConnectionFactory(configuration)
   val poolConfig = new PoolConfiguration(maxPoolSize, maxIdleMillis, maxQueueSize)
   val pool = new ConnectionPool(factory, poolConfig)
