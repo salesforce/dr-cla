@@ -9,25 +9,25 @@ case class ClaSignature(id: Int, contact: Contact, signedOn: LocalDateTime, claV
 object ClaSignature {
   def rowToClaSignature(row: Row): ClaSignature = {
     val id = row.as[Int]("cla_id")
-    val signedOn = row.as[LocalDateTime]("signed_on__c")
-    val claVersion = row.as[String]("cla_version__c")
+    val signedOn = row.as[LocalDateTime]("sf_cla__signed_on__c")
+    val claVersion = row.as[String]("sf_cla__cla_version__c")
     val contact = Contact.rowToContact(row)
     ClaSignature(id, contact, signedOn, claVersion)
   }
 }
 
 case class CreateClaSignature(claSignature: ClaSignature) extends Statement {
-  override val sql = "INSERT INTO salesforce.cla_signature__c (contact__r__github_id__c, signed_on__c, cla_version__c) VALUES (?, ?, ?)"
+  override val sql = "INSERT INTO salesforce.sf_cla__cla_signature__c (sf_cla__contact__r__sf_cla__github_id__c, sf_cla__signed_on__c, sf_cla__cla_version__c) VALUES (?, ?, ?)"
   override val values = Seq(claSignature.contact.gitHubId, claSignature.signedOn, claSignature.claVersion)
 }
 
 case class GetClaSignatures(gitHubIds: Set[String]) extends Query[Seq[ClaSignature]] {
   override def sql =
     s"""
-       |SELECT *, cla_signature__c.id AS cla_id
-       |FROM salesforce.cla_signature__c
-       |INNER JOIN salesforce.contact ON (salesforce.contact.github_id__c = cla_signature__c.contact__r__github_id__c)
-       |WHERE contact__r__github_id__c = ANY(?)
+       |SELECT *, sf_cla__cla_signature__c.id AS cla_id
+       |FROM salesforce.sf_cla__cla_signature__c
+       |INNER JOIN salesforce.contact ON (salesforce.contact.sf_cla__github_id__c = sf_cla__cla_signature__c.sf_cla__contact__r__sf_cla__github_id__c)
+       |WHERE sf_cla__contact__r__sf_cla__github_id__c = ANY(?)
      """.stripMargin
   override val values = Seq(gitHubIds)
   override def reduce(rows: Iterator[Row]): Seq[ClaSignature] = rows.map(ClaSignature.rowToClaSignature).toSeq

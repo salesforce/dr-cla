@@ -8,12 +8,12 @@ CREATE TABLE salesforce.Contact (
   firstname VARCHAR NOT NULL,
   lastname VARCHAR NOT NULL,
   email VARCHAR NOT NULL,
-  github_id__c VARCHAR NOT NULL UNIQUE
+  sf_cla__github_id__c VARCHAR NOT NULL UNIQUE
 );
 
-CREATE TABLE salesforce.CLA_Signature__c (
+CREATE TABLE salesforce.sf_cla__CLA_Signature__c (
   id SERIAL PRIMARY KEY,
-  contact__r__github_id__c VARCHAR NOT NULL REFERENCES salesforce.Contact (github_id__c),
-  signed_on__c TIMESTAMP WITHOUT TIME ZONE NOT NULL,
-  cla_version__c VARCHAR NOT NULL
+  sf_cla__contact__r__sf_cla__github_id__c VARCHAR NOT NULL REFERENCES salesforce.Contact (sf_cla__github_id__c),
+  sf_cla__signed_on__c TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+  sf_cla__cla_version__c VARCHAR NOT NULL
 );

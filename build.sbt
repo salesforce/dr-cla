@@ -27,3 +27,13 @@ libraryDependencies ++= Seq(
 )
 
 pipelineStages := Seq(digest, gzip)
+
+enablePlugins(ForcePlugin)
+
+username in Force := sys.env.getOrElse("SALESFORCE_USERNAME", "")
+
+password in Force := sys.env.getOrElse("SALESFORCE_PASSWORD", "")
+
+//unpackagedComponents in Force := Map("CustomObject" -> Seq("CLA_Signature__c"), "CustomField" -> Seq("Contact.github_id__c"))
+
+packagedComponents in Force := Seq("sf_cla")
