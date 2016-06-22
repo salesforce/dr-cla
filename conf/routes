@@ -25,5 +25,3 @@ GET        /assets/*file                   controllers.Assets.versioned(path="/p
 
 # WebJars
 GET        /webjars/*file                  controllers.WebJarAssets.at(file)
-
-GET        /.well-known/acme-challenge/hQ0bsarGZQ7cLBgYsFp_wCVCWPahthlZvJNPervrHXI controllers.Application.wellKnown
