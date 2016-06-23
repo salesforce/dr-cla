@@ -1,32 +1,25 @@
 package models
 
-import modules.{Database, DatabaseImpl}
+import modules.Database
 import org.joda.time.LocalDateTime
 import org.scalatestplus.play.{OneAppPerSuite, PlaySpec}
-import play.api.Mode
-import play.api.inject.bind
+import org.flywaydb.play.PlayInitializer
 import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.test.Helpers._
 
 class ClaSignatureSpec extends PlaySpec with OneAppPerSuite {
 
-  val testConfig = Map(
-    "db.default.url" -> "postgres://salesforcecla:password@localhost:5432/salesforcecla-test",
-    "db.default.migration.auto" -> true,
-    "db.default.migration.validateOnMigrate" -> false,
-    "db.default.migration.initOnMigrate" -> true
-  )
+  val testConfig = Map("db.default.url" -> "postgres://salesforcecla:password@localhost:5432/salesforcecla-test")
 
-  override lazy val app = new GuiceApplicationBuilder()
-    .bindings(bind[Database].to[DatabaseImpl])
-    .configure(testConfig)
-    .in(Mode.Test)
-    .build()
+  implicit override lazy val app = new GuiceApplicationBuilder().configure(testConfig).build()
 
   lazy val db = app.injector.instanceOf[Database]
+  lazy val playInitializer = app.injector.instanceOf[PlayInitializer]
 
-  // clear out the db
-  await(db.raw("start from scratch", "drop table schema_version"))
+  await(db.raw("reset db", "drop schema salesforce cascade"))
+  await(db.raw("reset db", "drop table schema_version"))
+
+  playInitializer.onStart()
 
   "ClaSignature" must {
     "be creatable" in {
