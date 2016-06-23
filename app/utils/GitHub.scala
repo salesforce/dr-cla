@@ -209,6 +209,18 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
     ws(path, accessToken).get().flatMap(ok[JsArray])
   }
 
+  def orgMembersAdd(org: String, username: String, accessToken: String): Future[JsObject] = {
+    val path = s"orgs/$org/memberships/$username"
+    val json = Json.obj("role" -> "member")
+    ws(path, accessToken).put(json).flatMap(ok[JsObject])
+  }
+
+  def activateOrgMembership(org: String, username: String, accessToken: String): Future[JsObject] = {
+    val path = s"user/memberships/orgs/$org"
+    val json = Json.obj("state" -> "active")
+    ws(path, accessToken).patch(json).flatMap(ok[JsObject])
+  }
+
   // todo: definitely will need paging
   def repoCommits(ownerRepo: String, accessToken: String): Future[JsArray] = {
     val path = s"repos/$ownerRepo/commits"

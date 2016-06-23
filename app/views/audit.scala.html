@@ -1,4 +1,4 @@
-@(encAccessToken: String, orgs: Seq[utils.GitHub.Org])(implicit staticWebJarAssets: StaticWebJarAssets)
+@(encAccessToken: String, orgs: Seq[utils.GitHub.Org], gitHubAppId: String)(implicit staticWebJarAssets: StaticWebJarAssets)
 
 @main("CLA Audit") {
 
@@ -6,16 +6,24 @@
 
     @orgs.map { org =>
         <ul class="slds-list--vertical slds-has-dividers">
-            <li class="slds-list__item">
+            <li class="slds-list__item nohover">
                 <div class="slds-tile">
                     <p class="slds-tile__title slds-truncate">GitHub Organization: <a href="https://github.com/@org.login">@org.login</a></p>
                     <div class="slds-tile__detail slds-text-body--small">
                         <ul class="slds-tile__detail slds-list--horizontal slds-has-dividers slds-text-body--small">
                             <li class="slds-truncate slds-list__item">@org.repos.length Repos</li>
                             <li class="slds-truncate slds-list__item">
-                                <div data-href="@routes.Application.auditPrValidatorStatus(org.login, encAccessToken)">
+                                <div data-href="@routes.Application.auditPrValidatorStatus(org.login, encAccessToken)" style="display: inline-block">
                                     <p>
                                         Loading Pull Request Validator Status...
+                                        <img src="@staticWebJarAssets.locateUrl("assets/images/spinners/slds_spinner.gif")" alt="Loading..." style="height: 1rem; vertical-align: top;" />
+                                    </p>
+                                </div>
+                            </li>
+                            <li class="slds-truncate slds-list__item">
+                                <div data-href="@routes.Application.auditSystemUserAccess(org.login, encAccessToken)" style="display: inline-block">
+                                    <p>
+                                        Checking if the system user has access to this org...
                                         <img src="@staticWebJarAssets.locateUrl("assets/images/spinners/slds_spinner.gif")" alt="Loading..." style="height: 1rem; vertical-align: top;" />
                                     </p>
                                 </div>
@@ -48,6 +56,8 @@
             </li>
         </ul>
     }
+
+    Don't see all of your orgs?  <a href="https://github.com/settings/connections/applications/@gitHubAppId" target="_blank">Grant access</a> and then refresh this page.
 
     <script>
         // OMGJS!

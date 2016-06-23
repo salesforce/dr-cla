@@ -1,0 +1,16 @@
+@(org: String, encAccessToken: String, isAdmin: Boolean, systemUser: String, hasAccess: Boolean)
+
+@if(hasAccess) {
+    CLA system user (@systemUser) has access to this org
+} else {
+    @if(isAdmin) {
+        <form action="@routes.Application.addSystemUserToOrg" method="post">
+            <input type="hidden" name="org" value="@org">
+            <input type="hidden" name="encAccessToken" value="@encAccessToken">
+            <label>The CLA system user (@systemUser) needs access to this org</label>
+            <button class="slds-button slds-button--neutral slds-button--small" type="submit" style="line-height: 1rem; vertical-align: baseline; min-height: auto;">Grant Access</button>
+        </form>
+    } else {
+        An org admin will need to add @systemUser as a member of @org
+    }
+}

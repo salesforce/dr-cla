@@ -112,7 +112,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
   def audit = Action.async { implicit request =>
     getGitHubAuthInfo(request).flatMap { maybeGitHubAuthInfo =>
       maybeGitHubAuthInfo.fold {
-        Future.successful(Redirect(gitHubAuthUrl(Seq("read:org", "admin:org_hook"), routes.Application.audit().absoluteURL())))
+        Future.successful(Redirect(gitHubAuthUrl(Seq("read:org", "admin:org_hook", "admin:org"), routes.Application.audit().absoluteURL())))
       } { gitHubAuthInfo =>
         val accessToken = crypto.decryptAES(gitHubAuthInfo.encAuthToken)
 
@@ -124,7 +124,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
           userOrgs <- gitHub.userOrgs(accessToken).map(_.as[Seq[GitHub.Org]])
           orgsWithRepos <- Future.sequence(userOrgs.map(fetchOrgRepos))
         } yield {
-          Ok(views.html.audit(gitHubAuthInfo.encAuthToken, orgsWithRepos))
+          Ok(views.html.audit(gitHubAuthInfo.encAuthToken, orgsWithRepos, gitHub.clientId))
         }
       }
     }
@@ -144,6 +144,16 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
     } recover {
       case e: Exception => InternalServerError("Could not fetch the org's Webhooks")
     }
+  }
+
+  def auditSystemUserAccess(org: String, encAccessToken: String) = Action.async { implicit request =>
+    val accessToken = crypto.decryptAES(encAccessToken)
+
+    for {
+      isAdmin <- gitHub.userOrgMembership(org, accessToken).map(_.\("role").as[String] == "admin")
+      hasAccess <- gitHub.userOrgMembership(org, gitHub.integrationToken).map(_ => true).recover { case _ => false }
+      systemUser <- gitHub.userInfo(gitHub.integrationToken).map(_.\("login").as[String])
+    } yield Ok(views.html.systemUserAccess(org, encAccessToken, isAdmin, systemUser, hasAccess))
   }
 
   def auditContributors(org: String, ownerRepo: String, encAccessToken: String) = Action.async { implicit request =>
@@ -188,6 +198,25 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
         gitHub.addOrgWebhook(org, Seq("pull_request"), webhookUrl, "json", accessToken).map { _ =>
           Redirect(routes.Application.audit())
         }
+      case _ =>
+        Future.successful(BadRequest("Required fields missing"))
+    }
+  }
+
+  def addSystemUserToOrg() = Action.async(parse.urlFormEncoded) { implicit request =>
+    val maybeOrg = request.body.get("org").flatMap(_.headOption)
+    val maybeEncAccessToken = request.body.get("encAccessToken").flatMap(_.headOption)
+
+    (maybeOrg, maybeEncAccessToken) match {
+      case (Some(org), Some(encAccessToken)) =>
+        val accessToken = crypto.decryptAES(encAccessToken)
+
+        for {
+          userInfo <- gitHub.userInfo(gitHub.integrationToken)
+          login = userInfo.\("login").as[String]
+          _ <-  gitHub.orgMembersAdd(org, login, accessToken)
+          //_ <- gitHub.activateOrgMembership(org, login, gitHub.integrationToken)
+        } yield Redirect(routes.Application.audit())
       case _ =>
         Future.successful(BadRequest("Required fields missing"))
     }

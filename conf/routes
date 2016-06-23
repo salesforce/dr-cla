@@ -2,18 +2,20 @@
 # This file defines all application routes (Higher priority routes first)
 # ~~~~
 
-GET         /sign-cla                      controllers.Application.signCla
-POST        /sign-cla                      controllers.Application.submitCla
+GET         /sign-cla                        controllers.Application.signCla
+POST        /sign-cla                        controllers.Application.submitCla
 
-GET         /signed-cla                    controllers.Application.signedCla
+GET         /signed-cla                      controllers.Application.signedCla
 
-POST        /webhook-pullrequest           controllers.Application.webhookPullRequest
+POST        /webhook-pullrequest             controllers.Application.webhookPullRequest
 
-POST        /add-pr-validator-webhook      controllers.Application.addPrValidatorWebhook
 
-GET         /audit                         controllers.Application.audit
-GET         /audit/pr-validator-status     controllers.Application.auditPrValidatorStatus(org: String, encAccessToken: String)
-GET         /audit/contributors            controllers.Application.auditContributors(org: String, ownerRepo: String, encAccessToken: String)
+GET         /audit                           controllers.Application.audit
+GET         /audit/pr-validator-status       controllers.Application.auditPrValidatorStatus(org: String, encAccessToken: String)
+POST        /audit/add-pr-validator-webhook  controllers.Application.addPrValidatorWebhook
+GET         /audit/system-user-access        controllers.Application.auditSystemUserAccess(org: String, encAccessToken: String)
+POST        /audit/add-system-user-to-org    controllers.Application.addSystemUserToOrg
+GET         /audit/contributors              controllers.Application.auditContributors(org: String, ownerRepo: String, encAccessToken: String)
 
 # OAuth
 GET         /_github_oauth_callback        controllers.Application.gitHubOauthCallback(code: String, state: String)
