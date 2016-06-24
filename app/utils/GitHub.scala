@@ -3,7 +3,7 @@ package utils
 import java.net.URL
 import javax.inject.Inject
 
-import play.api.{Application, Configuration}
+import play.api.Configuration
 import play.api.http.{HeaderNames, MimeTypes, Status}
 import play.api.libs.json.Reads._
 import play.api.libs.json._
@@ -211,7 +211,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
 
   def orgMembersAdd(org: String, username: String, accessToken: String): Future[JsObject] = {
     val path = s"orgs/$org/memberships/$username"
-    val json = Json.obj("role" -> "member")
+    val json = Json.obj("role" -> "admin")
     ws(path, accessToken).put(json).flatMap(ok[JsObject])
   }
 

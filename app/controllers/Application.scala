@@ -92,8 +92,6 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
   }
 
   def webhookPullRequest = Action.async(parse.json) { implicit request =>
-    // todo: maybe filter on "action" = "opened", "reopened”, or “synchronize”
-
     (request.body \ "pull_request").asOpt[JsValue].fold {
       // the webhook call didn't have a pull request - it was likely a test hook
       (request.body \ "zen").asOpt[String].fold {
@@ -102,10 +100,16 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
         Future.successful(Ok(zen))
       }
     } { pullRequest =>
-      for {
-        pullRequestWithCommitsAndStatus <- pullRequestWithCommitsAndStatus(pullRequest)
-        validate <- validatePullRequests(Seq(pullRequestWithCommitsAndStatus))
-      } yield Ok
+      val state = (pullRequest \ "state").as[String]
+      state match {
+        case "closed" =>
+          Future.successful(Ok)
+        case "open" =>
+          for {
+            pullRequestWithCommitsAndStatus <- pullRequestWithCommitsAndStatus(pullRequest)
+            validate <- validatePullRequests(Seq(pullRequestWithCommitsAndStatus))
+          } yield Ok
+      }
     }
   }
 
@@ -253,7 +257,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
         val prCommitsFuture = gitHub.pullRequestCommits(ownerRepo, prNumber, gitHub.integrationToken)
 
         val prCommittersFuture = prCommitsFuture.map { commits =>
-          commits.value.map(_.\("committer").\("login").as[String])
+          commits.value.map(_.\("author").\("login").as[String])
         }
 
         val existingCommittersFuture = gitHub.collaborators(ownerRepo, gitHub.integrationToken).map(_.value.map(_.\("login").as[String]))
@@ -273,10 +277,12 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
         }
 
         committersWithoutClasFuture.flatMap { committersWithoutClas =>
+
           val state = if (committersWithoutClas.isEmpty) "success" else "failure"
           val description = if (committersWithoutClas.isEmpty) "All contributors have signed the CLA" else "One or more contributors need to sign the CLA"
 
           gitHub.createStatus(ownerRepo, sha, state, claUrl, description, "salesforce-cla", gitHub.integrationToken).flatMap { status =>
+
             // don't re-comment on the PR
             gitHub.issueComments(ownerRepo, prNumber, gitHub.integrationToken).flatMap { comments =>
               val alreadyCommented = comments.value.exists(_.\("user").\("login").as[String] == integrationUserId)
