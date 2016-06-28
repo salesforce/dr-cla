@@ -196,6 +196,11 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
     ws(path, accessToken).post(json).flatMap(created)
   }
 
+  def deleteLabel(ownerRepo: String, name: String, accessToken: String): Future[Unit] = {
+    val path = s"repos/$ownerRepo/labels/$name"
+    ws(path, accessToken).delete().flatMap(nocontent)
+  }
+
   def createLabels(ownerRepo: String, labels: Map[String,String], accessToken: String): Future[Seq[JsValue]] = {
     val labelCreateFutures = labels.map { labelColor =>
       createLabel(ownerRepo, labelColor._1, labelColor._2, accessToken)
@@ -228,6 +233,10 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
     labelAppliesFuture
   }
 
+  // github is lying to us here :
+  // https://developer.github.com/v3/issues/labels/#remove-a-label-from-an-issue
+  // Supposed to return Status: 204 No Content
+  // but actually returns 200 : OK
   def removeLabel(ownerRepo: String, name: String, issueNumber: Int, accessToken: String): Future[JsValue] = {
     val path = s"repos/$ownerRepo/issues/$issueNumber/labels/$name"
     ws(path, accessToken).delete().flatMap(ok[JsValue])
@@ -302,6 +311,15 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
     jsValue.asOpt[A].fold {
       Future.failed[A](new IllegalStateException("Data was not in the expected form"))
     } (Future.successful)
+  }
+
+  private def nocontent(response: WSResponse): Future[Unit] = {
+    if (response.status == Status.NO_CONTENT) {
+      Future.successful(Unit)
+    } else {
+      print(response.status)
+      Future.failed(new IllegalStateException(response.body))
+    }
   }
 
   // todo: ok with a JsValue default
