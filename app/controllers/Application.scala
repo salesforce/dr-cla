@@ -219,7 +219,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
           userInfo <- gitHub.userInfo(gitHub.integrationToken)
           login = userInfo.\("login").as[String]
           _ <-  gitHub.orgMembersAdd(org, login, accessToken)
-          //_ <- gitHub.activateOrgMembership(org, login, gitHub.integrationToken)
+          _ <- gitHub.activateOrgMembership(org, login, gitHub.integrationToken)
         } yield Redirect(routes.Application.audit())
       case _ =>
         Future.successful(BadRequest("Required fields missing"))

@@ -38,7 +38,7 @@ Local Dev Setup
     a. Take note of your OAUTH Client ID and Secret
 1. Create a new GitHub Personal Access Token:
     a. Create a new Personal Access Token: [https://github.com/settings/tokens](https://github.com/settings/tokens)
-    a. Enable the following scopes: `public_repo` `repo:status` `read:org` `repo_deployment` `admin:org_hook`
+    a. Enable the following scopes: `repo` `admin:org` `admin:org_hook`
     a. Take note of your personal access token
 
 
