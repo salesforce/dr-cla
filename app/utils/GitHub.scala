@@ -284,6 +284,12 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
     ws(path, accessToken).post(json).flatMap(created)
   }
 
+  // todo make the tests cleanup their webhooks, pr webhooks have a limit of 20
+  def deleteOrgWebhook(org: String, hookId: Int, accessToken: String): Future[Unit] = {
+    val path = s"orgs/$org/hooks/$hookId"
+    ws(path, accessToken).delete().flatMap(nocontent)
+  }
+
   def orgMembers(org: String, accessToken: String): Future[JsArray] = {
     val path = s"orgs/$org/members"
     ws(path, accessToken).get().flatMap(ok[JsArray])
