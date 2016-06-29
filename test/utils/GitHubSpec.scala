@@ -126,6 +126,48 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
     }
   }
 
+  "GitHub.getAllLabels" must {
+    "get the issue labels" in {
+      val issueLabels = await(gitHub.getAllLabels("foobar-test/asdf", gitHub.integrationToken))
+      issueLabels.value.length must be > 0
+    }
+  }
+
+  "GitHub.createLabel" must {
+    "create new label" in {
+      val newLabel = await(gitHub.createLabel("foobar-test/asdf", "foobar", "000000", gitHub.integrationToken))
+      (newLabel \ "name").as[String] must equal ("foobar")
+      (newLabel \ "color").as[String] must equal ("000000")
+    }
+  }
+
+  "GitHub.applyLabel" must {
+    "apply a label to issue" in {
+      val appliedLabel = await(gitHub.applyLabel("foobar-test/asdf", "foobar", 8, gitHub.integrationToken))
+//    We seem to be getting a list returned here that I can't quite figure out how to parse
+//      (appliedLabel \ "name").as[String] must contain ("foobar")
+    }
+  }
+
+  "GitHub.getIssueLabels" must {
+    "get labels on an issue" in {
+      val issueLabels = await(gitHub.getIssueLabels("foobar-test/asdf", 8, gitHub.integrationToken))
+      issueLabels.value.map(_.\("name").as[String]) must contain ("foobar")
+    }
+  }
+
+  "GitHub.removeLabel" must {
+    "remove a label from issue" in {
+      val removedLabel = await(gitHub.removeLabel("foobar-test/asdf", "foobar", 8, gitHub.integrationToken))
+    }
+  }
+
+  "GitHub.deleteLabel" must {
+    "delete a label" in {
+      val deletedLabel = await(gitHub.deleteLabel("foobar-test/asdf", "foobar", gitHub.integrationToken))
+    }
+  }
+
   "GitHub.addOrgWebhook" must {
     "create an org Webhook" in {
       val uuid = UUID.randomUUID().toString
