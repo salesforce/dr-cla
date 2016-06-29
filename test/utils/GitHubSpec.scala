@@ -143,9 +143,8 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
 
   "GitHub.applyLabel" must {
     "apply a label to issue" in {
-      val appliedLabel = await(gitHub.applyLabel("foobar-test/asdf", "foobar", 8, gitHub.integrationToken))
-//    We seem to be getting a list returned here that I can't quite figure out how to parse
-//      (appliedLabel \ "name").as[String] must contain ("foobar")
+      val appliedLabels = await(gitHub.applyLabel("foobar-test/asdf", "foobar", 8, gitHub.integrationToken))
+      (appliedLabels.head.get \ "name").as[String] must equal ("foobar")
     }
   }
 

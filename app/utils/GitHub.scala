@@ -213,12 +213,10 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
     ws(path, accessToken).get().flatMap(ok[JsArray])
   }
 
-  def applyLabel(ownerRepo: String, name: String, issueNumber: Int, accessToken: String): Future[JsValue] = {
+  def applyLabel(ownerRepo: String, name: String, issueNumber: Int, accessToken: String): Future[JsArray] = {
     val path = s"repos/$ownerRepo/issues/$issueNumber/labels"
-    val json =  Json.arr(
-      name
-    )
-    ws(path, accessToken).post(json).flatMap(ok[JsValue])
+    val json =  Json.arr(name)
+    ws(path, accessToken).post(json).flatMap(ok[JsArray])
   }
 
   def applyLabelSafe(ownerRepo: String, name: String, issueNumber: Int, accessToken: String): Future[JsValue] = {
