@@ -5,6 +5,8 @@
         <title>@title</title>
         <link rel="stylesheet" href="@staticWebJarAssets.locateUrl("assets/styles/salesforce-lightning-design-system.css")">
         <link rel="stylesheet" href="@staticWebJarAssets.locateUrl("octicons/octicons.css")">
+        <link rel="prefetch" href="@staticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-Light.woff2")">
+        <link rel="prefetch" href="@staticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-Regular.woff2")">
         <style>
         @@font-face {
             font-family: "Salesforce Sans";
@@ -71,16 +73,12 @@
             display: block;
             font-size: 20px;
             margin-top: -26px;
+            margin-left: 8px;
             color: #fff;
         }
 
         .slds-list--vertical.slds-has-dividers > .nohover.slds-list__item:hover {
             background-color: transparent;
-            border-color: transparent;
-        }
-
-        .slds-list--vertical.slds-has-dividers > .slds-list__item {
-            border: none;
         }
         </style>
     </head>
@@ -88,8 +86,15 @@
         <div class="slds-container--center slds-container--medium" style="text-align: center; padding: 20px;">
             <img src="@routes.Assets.versioned("images/salesforce.svg")" style="height: 57px">
         </div>
-        <div class="slds-container--center slds-container--medium" style="text-align: center">
+        <img id="loading" src="@staticWebJarAssets.locateUrl("assets/images/spinners/slds_spinner.gif")" alt="Loading..." style="height: 4rem; vertical-align: top; display: block; margin: auto" />
+        <div id="content" class="slds-container--center slds-container--medium" style="text-align: center; display: none;">
             @content
         </div>
+        <script>
+            window.onload = function() {
+                document.getElementById("loading").style.display = "none";
+                document.getElementById("content").style.display = "block";
+            };
+        </script>
     </body>
 </html>

@@ -10,49 +10,42 @@
                 <div class="slds-tile">
                     <p class="slds-tile__title slds-truncate">GitHub Organization: <a href="https://github.com/@org.login">@org.login</a></p>
                     <div class="slds-tile__detail slds-text-body--small">
-                        <ul class="slds-tile__detail slds-list--horizontal slds-has-dividers slds-text-body--small">
-                            <li class="slds-truncate slds-list__item">@org.repos.length Repos</li>
-                            <li class="slds-truncate slds-list__item">
-                                <div data-href="@routes.Application.auditPrValidatorStatus(org.login, encAccessToken)" style="display: inline-block">
-                                    <p>
-                                        Loading Pull Request Validator Status...
-                                        <img src="@staticWebJarAssets.locateUrl("assets/images/spinners/slds_spinner.gif")" alt="Loading..." style="height: 1rem; vertical-align: top;" />
-                                    </p>
-                                </div>
+                        <ul class="slds-tile__detail slds-list--vertical slds-text-body--small">
+                            <li class="slds-truncate slds-list__item nohover">
+                                @if(org.role == utils.GitHub.Role.Admin) {
+                                    <div data-href="@routes.Application.auditPrValidatorStatus(org.login, encAccessToken)">
+                                        <p>
+                                            Loading Pull Request Validator Status...
+                                            <img src="@staticWebJarAssets.locateUrl("assets/images/spinners/slds_spinner.gif")" alt="Loading..." style="height: 1rem; vertical-align: top;" />
+                                        </p>
+                                    </div>
+                                } else {
+                                    An org admin will need to install a webhook in order to validate pull requests
+                                }
                             </li>
-                            <li class="slds-truncate slds-list__item">
-                                <div data-href="@routes.Application.auditSystemUserAccess(org.login, encAccessToken)" style="display: inline-block">
+                            <li class="slds-truncate slds-list__item nohover">
+                                <div data-href="@routes.Application.auditSystemUserAccess(org.login, encAccessToken)">
                                     <p>
                                         Checking if the system user has access to this org...
                                         <img src="@staticWebJarAssets.locateUrl("assets/images/spinners/slds_spinner.gif")" alt="Loading..." style="height: 1rem; vertical-align: top;" />
                                     </p>
                                 </div>
                             </li>
+                            <li class="slds-truncate slds-list__item nohover">
+                                <div data-href="@routes.Application.auditRepos(org.login, encAccessToken)" data-autoload="false">
+                                    @if(org.role == utils.GitHub.Role.Admin) {
+                                        <button class="slds-button slds-button--brand">
+                                            Load Repos
+                                            <img src="@staticWebJarAssets.locateUrl("assets/images/spinners/slds_spinner.gif")" alt="Loading..." class="slds-button__icon slds-button__icon--right" style="height: 1rem; display: none;" />
+                                        </button>
+                                    } else {
+                                        You must be an org admin to perform an audit.
+                                    }
+                                </div>
+                            </li>
                         </ul>
                     </div>
                 </div>
-
-                    @org.repos.map { repo =>
-                        <div class="slds-media slds-tile">
-                            <div class="slds-media__figure">
-                                <svg aria-hidden="true" class="slds-icon slds-icon-standard-canvas slds-timeline__icon"></svg>
-                                <span class="octicon octicon-repo"></span>
-                            </div>
-                            <div class="slds-media__body">
-                                <div class="slds-grid slds-grid--align-spread slds-has-flexi-truncate">
-                                    <p class="slds-tile__title slds-truncate"><a href="https://github.com/@repo.ownerRepo">@repo.ownerRepo</a></p>
-                                </div>
-                                <div class="slds-tile__detail slds-text-body--small">
-                                    <div data-href="@routes.Application.auditContributors(org.login, repo.ownerRepo, encAccessToken)">
-                                        <p>
-                                            Loading Contributor CLA Statuses...
-                                            <img src="@staticWebJarAssets.locateUrl("assets/images/spinners/slds_spinner.gif")" alt="Loading..." style="height: 1rem; vertical-align: top;" />
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    }
             </li>
         </ul>
     }
@@ -63,16 +56,44 @@
         // OMGJS!
         NodeList.prototype.forEach = Array.prototype.forEach;
 
-        // Find all of the divs with data-href attributes then load and display them
-        document.querySelectorAll("div[data-href]").forEach(function(div) {
+        function loadContent(div, url) {
             var xhr = new XMLHttpRequest();
-            xhr.open('GET', div.dataset.href, true);
+            xhr.open('GET', url, true);
             xhr.responseType = 'text';
             xhr.onload = function(e) {
                 div.innerHTML = e.target.response;
+                div.querySelectorAll("div[data-href]").forEach(addDataHrefHandlers);
             };
             xhr.send();
-        });
+        }
+
+        function addDataHrefHandlers(div) {
+            var autoload = true;
+
+            // default to autoload
+            if ((div.dataset.autoload != undefined) && (div.dataset.autoload != "true")) {
+                autoload = false;
+            }
+
+            if (autoload) {
+                loadContent(div, div.dataset.href);
+            }
+            else {
+                div.querySelectorAll("button").forEach(function (button) {
+                    button.onclick = function () {
+                        var loadingImg = button.querySelector("img");
+                        if (loadingImg != null) {
+                            loadingImg.style.display = "inline";
+                        }
+                        button.setAttribute("disabled", "");
+                        loadContent(div, div.dataset.href);
+                    };
+                });
+            }
+        }
+
+        // Find all of the divs with data-href attributes then load and display them
+        document.querySelectorAll("div[data-href]").forEach(addDataHrefHandlers);
     </script>
 
 }

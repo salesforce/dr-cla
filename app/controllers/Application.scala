@@ -120,15 +120,9 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
       } { gitHubAuthInfo =>
         val accessToken = crypto.decryptAES(gitHubAuthInfo.encAuthToken)
 
-        def fetchOrgRepos(org: GitHub.Org): Future[GitHub.Org] = {
-          gitHub.orgRepos(org.login, accessToken).map(_.as[Seq[GitHub.Repo]]).map(repos => org.copy(repos = repos))
-        }
-
-        for {
-          userOrgs <- gitHub.userOrgs(accessToken).map(_.as[Seq[GitHub.Org]])
-          orgsWithRepos <- Future.sequence(userOrgs.map(fetchOrgRepos))
-        } yield {
-          Ok(views.html.audit(gitHubAuthInfo.encAuthToken, orgsWithRepos, gitHub.clientId))
+        gitHub.userMembershipOrgs(Some("active"), accessToken).map { jsArray =>
+          val orgs = jsArray.as[Seq[GitHub.Org]]
+          Ok(views.html.audit(gitHubAuthInfo.encAuthToken, orgs, gitHub.clientId))
         }
       }
     }
@@ -185,9 +179,20 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
       val internalContributorsDetails = internalContributors.map { gitHubId =>
         val commits = repoCommits.value.filter(_.\("author").\("login").as[String] == gitHubId)
         gitHubId -> commits
-      }.toMap
+      }.toMap.filter { case (_, commits) =>
+        commits.nonEmpty
+      }
 
       Ok(views.html.auditRepo(externalContributorsDetails, internalContributorsDetails))
+    }
+  }
+
+  def auditRepos(org: String, encAccessToken: String) = Action.async { implicit request =>
+    val accessToken = crypto.decryptAES(encAccessToken)
+
+    gitHub.orgRepos(org, accessToken).map { jsArray =>
+      val repos = jsArray.as[Seq[GitHub.Repo]]
+      Ok(views.html.auditRepos(org, repos, encAccessToken))
     }
   }
 

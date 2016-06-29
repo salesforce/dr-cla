@@ -7,6 +7,7 @@ import play.api.Configuration
 import play.api.http.{HeaderNames, MimeTypes, Status}
 import play.api.libs.json.Reads._
 import play.api.libs.json._
+import play.api.libs.functional.syntax._
 import play.api.libs.ws.{WSClient, WSRequest, WSResponse}
 import play.api.mvc.Results.EmptyContent
 
@@ -67,7 +68,6 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
 
     // get the first page
     req(path, accessToken, 1, pageSize).flatMap { response =>
-
       val firstPageRepos = response.json.as[JsArray]
 
       def urlToPage(urlString: String): Int = {
@@ -115,6 +115,11 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
 
   def userOrgs(accessToken: String): Future[JsArray] = {
     ws("user/orgs", accessToken).get().flatMap(ok[JsArray])
+  }
+
+  def userMembershipOrgs(maybeState: Option[String], accessToken: String): Future[JsArray] = {
+    val maybeParams = maybeState.map(state => Seq("state" -> state)).getOrElse(Seq.empty[(String, String)])
+    ws("user/memberships/orgs", accessToken).withQueryString(maybeParams:_*).get().flatMap(ok[JsArray])
   }
 
   def userInfo(accessToken: String): Future[JsValue] = {
@@ -257,16 +262,26 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
 
 object GitHub {
 
+  object Role extends Enumeration {
+    val Admin = Value("admin")
+    val Member = Value("member")
+  }
+
   case class Repo(ownerRepo: String)
 
   object Repo {
     implicit val jsonReads: Reads[Repo] = (__ \ "full_name").read[String].map(Repo(_))
   }
 
-  case class Org(login: String, repos: Seq[Repo] = Seq.empty[Repo])
+  case class Org(login: String, role: Role.Value)
 
   object Org {
-    implicit val jsonReads: Reads[Org] = (__ \ "login").read[String].map(Org(_))
+    implicit val jsonReads: Reads[Org] = (
+      (__ \ "organization" \ "login").read[String] ~
+      (__ \ "role").read[String].map(Role.withName)
+    ) (Org(_, _))
   }
+
+
 
 }
