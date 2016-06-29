@@ -158,12 +158,14 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
   "GitHub.removeLabel" must {
     "remove a label from issue" in {
       val removedLabel = await(gitHub.removeLabel("foobar-test/asdf", "foobar", 8, gitHub.integrationToken))
+      removedLabel must equal (())
     }
   }
 
   "GitHub.deleteLabel" must {
     "delete a label" in {
       val deletedLabel = await(gitHub.deleteLabel("foobar-test/asdf", "foobar", gitHub.integrationToken))
+      deletedLabel must equal (())
     }
   }
 

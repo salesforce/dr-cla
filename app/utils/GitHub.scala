@@ -219,44 +219,55 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
     ws(path, accessToken).post(json).flatMap(ok[JsArray])
   }
 
-  def applyLabelSafe(ownerRepo: String, name: String, issueNumber: Int, accessToken: String): Future[JsValue] = {
+  def applyLabelSafe(ownerRepo: String, name: String, issueNumber: Int, accessToken: String): Future[JsArray] = {
     val issueLabelsFuture = getIssueLabels(ownerRepo, issueNumber, accessToken).map(_.value.map(_.\("name").as[String]).distinct.toList)
-    val labelAppliesFuture: Future[JsValue] = issueLabelsFuture.flatMap { labels =>
+    issueLabelsFuture.flatMap { labels =>
       if (!labels.contains(name)) {
         applyLabel(ownerRepo, name, issueNumber, accessToken)
       } else {
-        Future(JsNull)
+        Future.successful(Json.arr())
       }
     }
-    labelAppliesFuture
   }
 
   // github is lying to us here :
   // https://developer.github.com/v3/issues/labels/#remove-a-label-from-an-issue
   // Supposed to return Status: 204 No Content
   // but actually returns 200 : OK
-  def removeLabel(ownerRepo: String, name: String, issueNumber: Int, accessToken: String): Future[JsValue] = {
+  def removeLabel(ownerRepo: String, name: String, issueNumber: Int, accessToken: String): Future[Unit] = {
     val path = s"repos/$ownerRepo/issues/$issueNumber/labels/$name"
-    ws(path, accessToken).delete().flatMap(ok[JsValue])
-  }
-
-  def removeLabelSafe(ownerRepo: String, name: String, issueNumber: Int, accessToken: String): Future[JsValue] = {
-    val issueLabelsFuture = getIssueLabels(ownerRepo, issueNumber, accessToken).map(_.value.map(_.\("name").as[String]).distinct.toList)
-    val labelRemovesFuture: Future[JsValue] = issueLabelsFuture.flatMap { labels =>
-      if (labels.contains(name)) {
-        removeLabel(ownerRepo, name, issueNumber, accessToken)
-      } else {
-        Future(JsNull)
+    ws(path, accessToken).delete().flatMap { response =>
+      response.status match {
+        case Status.OK => Future.successful(Unit)
+        case _ => Future.failed(new IllegalStateException(response.body))
       }
     }
-    labelRemovesFuture
+  }
+
+  def removeLabelSafe(ownerRepo: String, name: String, issueNumber: Int, accessToken: String): Future[Unit] = {
+    val issueLabelsFuture = getIssueLabels(ownerRepo, issueNumber, accessToken).map(_.value.map(_.\("name").as[String]).distinct.toList)
+
+    issueLabelsFuture.flatMap { labels =>
+      if (labels.contains(name)) {
+        removeLabel(ownerRepo, name, issueNumber, accessToken)
+      }
+      else {
+        Future.successful(Unit)
+      }
+    }
   }
 
   def toggleLabelSafe(ownerRepo: String, newLabel: String, oldLabel: String, remove: Boolean, issueNumber: Int, accessToken: String): Future[JsValue] = {
-    if (remove) {
+    val removeLabelFuture = if (remove) {
       removeLabelSafe(ownerRepo, oldLabel, issueNumber, accessToken)
     }
-    applyLabelSafe(ownerRepo, newLabel, issueNumber, accessToken)
+    else {
+      Future.successful(Unit)
+    }
+
+    val applyLabelSafeFuture = applyLabelSafe(ownerRepo, newLabel, issueNumber, accessToken)
+
+    removeLabelFuture.flatMap(_ => applyLabelSafeFuture)
   }
 
   def orgWebhooks(org: String, accessToken: String): Future[JsArray] = {
@@ -321,7 +332,6 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
     if (response.status == Status.NO_CONTENT) {
       Future.successful(Unit)
     } else {
-      print(response.status)
       Future.failed(new IllegalStateException(response.body))
     }
   }
