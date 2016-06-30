@@ -181,6 +181,95 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
     ws(path, accessToken).get().flatMap(ok[JsArray])
   }
 
+  def getAllLabels(ownerRepo: String, accessToken: String): Future[JsArray] = {
+    val path = s"repos/$ownerRepo/labels"
+    ws(path, accessToken).get().flatMap(ok[JsArray])
+  }
+
+  def createLabel(ownerRepo: String, name: String, color: String, accessToken: String): Future[JsValue] = {
+    val path = s"repos/$ownerRepo/labels"
+
+    val json = Json.obj(
+      "name" -> name,
+      "color" -> color
+    )
+    ws(path, accessToken).post(json).flatMap(created)
+  }
+
+  def deleteLabel(ownerRepo: String, name: String, accessToken: String): Future[Unit] = {
+    val path = s"repos/$ownerRepo/labels/$name"
+    ws(path, accessToken).delete().flatMap(nocontent)
+  }
+
+  def createLabels(ownerRepo: String, labels: Map[String,String], accessToken: String): Future[Seq[JsValue]] = {
+    val labelCreateFutures = labels.map { labelColor =>
+      createLabel(ownerRepo, labelColor._1, labelColor._2, accessToken)
+    }
+    Future.sequence(labelCreateFutures.toList)
+  }
+
+  def getIssueLabels(ownerRepo: String, issueNumber: Int, accessToken: String): Future[JsArray] = {
+    val path = s"repos/$ownerRepo/issues/$issueNumber/labels"
+    ws(path, accessToken).get().flatMap(ok[JsArray])
+  }
+
+  def applyLabel(ownerRepo: String, name: String, issueNumber: Int, accessToken: String): Future[JsArray] = {
+    val path = s"repos/$ownerRepo/issues/$issueNumber/labels"
+    val json =  Json.arr(name)
+    ws(path, accessToken).post(json).flatMap(ok[JsArray])
+  }
+
+  def applyLabelSafe(ownerRepo: String, name: String, issueNumber: Int, accessToken: String): Future[JsArray] = {
+    val issueLabelsFuture = getIssueLabels(ownerRepo, issueNumber, accessToken).map(_.value.map(_.\("name").as[String]).distinct.toList)
+    issueLabelsFuture.flatMap { labels =>
+      if (!labels.contains(name)) {
+        applyLabel(ownerRepo, name, issueNumber, accessToken)
+      } else {
+        Future.successful(Json.arr())
+      }
+    }
+  }
+
+  // github is lying to us here :
+  // https://developer.github.com/v3/issues/labels/#remove-a-label-from-an-issue
+  // Supposed to return Status: 204 No Content
+  // but actually returns 200 : OK
+  def removeLabel(ownerRepo: String, name: String, issueNumber: Int, accessToken: String): Future[Unit] = {
+    val path = s"repos/$ownerRepo/issues/$issueNumber/labels/$name"
+    ws(path, accessToken).delete().flatMap { response =>
+      response.status match {
+        case Status.OK => Future.successful(Unit)
+        case _ => Future.failed(new IllegalStateException(response.body))
+      }
+    }
+  }
+
+  def removeLabelSafe(ownerRepo: String, name: String, issueNumber: Int, accessToken: String): Future[Unit] = {
+    val issueLabelsFuture = getIssueLabels(ownerRepo, issueNumber, accessToken).map(_.value.map(_.\("name").as[String]).distinct.toList)
+
+    issueLabelsFuture.flatMap { labels =>
+      if (labels.contains(name)) {
+        removeLabel(ownerRepo, name, issueNumber, accessToken)
+      }
+      else {
+        Future.successful(Unit)
+      }
+    }
+  }
+
+  def toggleLabelSafe(ownerRepo: String, newLabel: String, oldLabel: String, remove: Boolean, issueNumber: Int, accessToken: String): Future[JsValue] = {
+    val removeLabelFuture = if (remove) {
+      removeLabelSafe(ownerRepo, oldLabel, issueNumber, accessToken)
+    }
+    else {
+      Future.successful(Unit)
+    }
+
+    val applyLabelSafeFuture = applyLabelSafe(ownerRepo, newLabel, issueNumber, accessToken)
+
+    removeLabelFuture.flatMap(_ => applyLabelSafeFuture)
+  }
+
   def orgWebhooks(org: String, accessToken: String): Future[JsArray] = {
     val path = s"orgs/$org/hooks"
     ws(path, accessToken).get().flatMap(ok[JsArray])
@@ -202,6 +291,12 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
       )
     )
     ws(path, accessToken).post(json).flatMap(created)
+  }
+
+  // todo make the tests cleanup their webhooks, pr webhooks have a limit of 20
+  def deleteOrgWebhook(org: String, hookId: Int, accessToken: String): Future[Unit] = {
+    val path = s"orgs/$org/hooks/$hookId"
+    ws(path, accessToken).delete().flatMap(nocontent)
   }
 
   def orgMembers(org: String, accessToken: String): Future[JsArray] = {
@@ -231,6 +326,14 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
     jsValue.asOpt[A].fold {
       Future.failed[A](new IllegalStateException("Data was not in the expected form"))
     } (Future.successful)
+  }
+
+  private def nocontent(response: WSResponse): Future[Unit] = {
+    if (response.status == Status.NO_CONTENT) {
+      Future.successful(Unit)
+    } else {
+      Future.failed(new IllegalStateException(response.body))
+    }
   }
 
   // todo: ok with a JsValue default
