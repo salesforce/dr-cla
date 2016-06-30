@@ -162,22 +162,26 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
 
     val repoCommitsFuture = gitHub.repoCommits(ownerRepo, accessToken)
 
+    def commitAuthor(json: JsValue): String = {
+      (json \ "author" \ "login").asOpt[String].getOrElse((json \ "commit" \ "author" \ "email").as[String])
+    }
+
     for {
       internalContributors <- internalContributorsFuture.map(_.value.map(_.\("login").as[String]).distinct.toSet)
       repoCommits <- repoCommitsFuture
-      authors = repoCommits.value.map(_.\("author").\("login").as[String]).distinct.toSet
+      authors = repoCommits.value.map(commitAuthor).distinct.toSet
       externalContributors = authors.diff(internalContributors)
       clasForExternalContributors <- db.query(GetClaSignatures(externalContributors))
     } yield {
 
       val externalContributorsDetails = externalContributors.map { gitHubId =>
         val maybeClaSignature = clasForExternalContributors.find(_.contact.gitHubId == gitHubId)
-        val commits = repoCommits.value.filter(_.\("author").\("login").as[String] == gitHubId)
+        val commits = repoCommits.value.filter(commitAuthor(_) == gitHubId)
         gitHubId -> (maybeClaSignature, commits)
       }.toMap
 
       val internalContributorsDetails = internalContributors.map { gitHubId =>
-        val commits = repoCommits.value.filter(_.\("author").\("login").as[String] == gitHubId)
+        val commits = repoCommits.value.filter(commitAuthor(_) == gitHubId)
         gitHubId -> commits
       }.toMap.filter { case (_, commits) =>
         commits.nonEmpty
