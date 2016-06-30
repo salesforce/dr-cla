@@ -21,6 +21,10 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
 
   val gitHubOauthScopesForClaSigning = Seq("user","user:email")
 
+  def wellKnown() = Action {
+    Ok("BAMiwRnsNLGuI5avEmclfByiEX6JqRR4ZhDkEErMjs8.zdmFBXG8SrlgihnxvbwrjmwWUVG_yN7RhZBLE0xFGpI")
+  }
+
   // state is used for the URL to redirect to
   def gitHubOauthCallback(code: String, state: String) = Action.async { request =>
     gitHub.accessToken(code).map { accessToken =>
