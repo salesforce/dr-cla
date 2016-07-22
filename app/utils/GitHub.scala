@@ -365,26 +365,16 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
 
 object GitHub {
 
-  object Role extends Enumeration {
-    val Admin = Value("admin")
-    val Member = Value("member")
-  }
-
   case class Repo(ownerRepo: String)
 
   object Repo {
     implicit val jsonReads: Reads[Repo] = (__ \ "full_name").read[String].map(Repo(_))
   }
 
-  case class Org(login: String, role: Role.Value)
+  case class Org(login: String)
 
   object Org {
-    implicit val jsonReads: Reads[Org] = (
-      (__ \ "organization" \ "login").read[String] ~
-      (__ \ "role").read[String].map(Role.withName)
-    ) (Org(_, _))
+    implicit val jsonReads: Reads[Org] = (__ \ "organization" \ "login").read[String].map(Org(_))
   }
-
-
 
 }

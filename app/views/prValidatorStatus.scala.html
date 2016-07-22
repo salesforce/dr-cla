@@ -1,4 +1,4 @@
-@(org: String, maybeWebhookUrl: Option[String], encAccessToken: String)
+@(org: String, maybeWebhookUrl: Option[String], isAdmin: Boolean, encAccessToken: String)
 
 @maybeWebhookUrl.fold {
     <form action="@routes.Application.addPrValidatorWebhook" method="post">
@@ -8,5 +8,5 @@
         <button class="slds-button slds-button--neutral slds-button--small" type="submit" style="line-height: 1rem; vertical-align: baseline; min-height: auto;">Add Webhook</button>
     </form>
 } { webhookUrl =>
-    CLA PR Validator Installed (<a href="@webhookUrl">details</a>)
+    CLA PR Validator Installed @if(isAdmin) { (<a href="@webhookUrl">details</a>) }
 }

@@ -1,9 +1,10 @@
-@(encAccessToken: String, orgs: Seq[utils.GitHub.Org], gitHubAppId: String)(implicit staticWebJarAssets: StaticWebJarAssets)
+@(encAccessToken: String, orgs: Seq[utils.GitHub.Org], systemUser: String)(implicit staticWebJarAssets: StaticWebJarAssets)
 
 @main("CLA Audit") {
 
     <h2 class="slds-text-heading--large" style="margin-bottom: 20px;">CLA Audit</h2>
 
+    <h2 class="slds-text-heading--medium" style="text-align: left; padding-left: 0.5rem;">Orgs You Can Audit:</h2>
     @orgs.map { org =>
         <ul class="slds-list--vertical slds-has-dividers">
             <li class="slds-list__item nohover">
@@ -12,35 +13,19 @@
                     <div class="slds-tile__detail slds-text-body--small">
                         <ul class="slds-tile__detail slds-list--vertical slds-text-body--small">
                             <li class="slds-truncate slds-list__item nohover">
-                                @if(org.role == utils.GitHub.Role.Admin) {
-                                    <div data-href="@routes.Application.auditPrValidatorStatus(org.login, encAccessToken)">
-                                        <p>
-                                            Loading Pull Request Validator Status...
-                                            <img src="@staticWebJarAssets.locateUrl("assets/images/spinners/slds_spinner.gif")" alt="Loading..." style="height: 1rem; vertical-align: top;" />
-                                        </p>
-                                    </div>
-                                } else {
-                                    An org admin will need to install a webhook in order to validate pull requests
-                                }
-                            </li>
-                            <li class="slds-truncate slds-list__item nohover">
-                                <div data-href="@routes.Application.auditSystemUserAccess(org.login, encAccessToken)">
+                                <div data-href="@routes.Application.auditPrValidatorStatus(org.login, encAccessToken)">
                                     <p>
-                                        Checking if the system user has access to this org...
+                                        Loading Pull Request Validator Status...
                                         <img src="@staticWebJarAssets.locateUrl("assets/images/spinners/slds_spinner.gif")" alt="Loading..." style="height: 1rem; vertical-align: top;" />
                                     </p>
                                 </div>
                             </li>
                             <li class="slds-truncate slds-list__item nohover">
                                 <div data-href="@routes.Application.auditRepos(org.login, encAccessToken)" data-autoload="false">
-                                    @if(org.role == utils.GitHub.Role.Admin) {
-                                        <button class="slds-button slds-button--brand">
-                                            Load Repos
-                                            <img src="@staticWebJarAssets.locateUrl("assets/images/spinners/slds_spinner.gif")" alt="Loading..." class="slds-button__icon slds-button__icon--right" style="height: 1rem; display: none;" />
-                                        </button>
-                                    } else {
-                                        You must be an org admin to perform an audit.
-                                    }
+                                    <button class="slds-button slds-button--brand">
+                                        Load Repos
+                                        <img src="@staticWebJarAssets.locateUrl("assets/images/spinners/slds_spinner.gif")" alt="Loading..." class="slds-button__icon slds-button__icon--right" style="height: 1rem; display: none;" />
+                                    </button>
                                 </div>
                             </li>
                         </ul>
@@ -50,7 +35,7 @@
         </ul>
     }
 
-    Don't see all of your orgs?  <a href="https://github.com/settings/connections/applications/@gitHubAppId" target="_blank">Grant access</a> and then refresh this page.
+    To add orgs, invite <code>@systemUser</code> as an admin to the org.  Once the invite is accepted you will see the org here.
 
     <script>
         // OMGJS!
