@@ -140,6 +140,13 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
     jsArray.value.filter(org => roles.contains(org.\("role").as[String])).map(_.as[GitHub.Org])
   }
 
+  private def isOrgAdmin(org: String, accessToken: String): Future[Boolean] = {
+    gitHub.userMembershipOrgs(Some("active"), accessToken).map { jsArray =>
+      val orgs = orgsWithRole(Seq("admin"))(jsArray)
+      orgs.exists(_.login == org)
+    }
+  }
+
   private def hasOrgAccess(org: String, accessToken: String): Future[Boolean] = {
     gitHub.userMembershipOrgs(Some("active"), accessToken).map { jsArray =>
       val orgs = orgsWithRole(Seq("admin", "member"))(jsArray)
@@ -150,8 +157,8 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
   def auditPrValidatorStatus(org: String, encAccessToken: String) = Action.async { implicit request =>
     val accessToken = crypto.decryptAES(encAccessToken)
 
-    hasOrgAccess(org, accessToken).flatMap { hasOrgAccess =>
-      if (hasOrgAccess) {
+    isOrgAdmin(org, accessToken).flatMap { isOrgAdmin =>
+      if (isOrgAdmin) {
         gitHub.userOrgMembership(org, accessToken).flatMap { orgInfo =>
           val isAdmin = (orgInfo \ "role").as[String] == "admin"
           gitHub.orgWebhooks(org, gitHub.integrationToken).map { webhooks =>
@@ -227,8 +234,8 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
       case (Some(org), Some(encAccessToken)) =>
         val accessToken = crypto.decryptAES(encAccessToken)
 
-        hasOrgAccess(org, accessToken).flatMap { hasOrgAccess =>
-          if (hasOrgAccess) {
+        isOrgAdmin(org, accessToken).flatMap { isOrgAdmin =>
+          if (isOrgAdmin) {
             val webhookUrl = routes.Application.webhookPullRequest().absoluteURL()
             gitHub.addOrgWebhook(org, Seq("pull_request"), webhookUrl, "json", gitHub.integrationToken).map { _ =>
               Redirect(routes.Application.audit())
