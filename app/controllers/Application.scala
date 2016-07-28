@@ -123,7 +123,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
 
         val userAndIntegrationOrgsFuture = for {
           // the user must be either a member or an admin
-          userOrgs <- gitHub.userMembershipOrgs(Some("active"), accessToken).map(orgsWithRole(Seq("admin", "member")))
+          userOrgs <- gitHub.userMembershipOrgs(Some("active"), accessToken).map(orgsWithRole(Seq("admin")))
           // the integration user must be an admin
           integrationOrgs <- gitHub.userMembershipOrgs(Some("active"), gitHub.integrationToken).map(orgsWithRole(Seq("admin")))
           systemUser <- gitHub.userInfo(gitHub.integrationToken).map(_.\("login").as[String])
@@ -143,13 +143,6 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
   private def isOrgAdmin(org: String, accessToken: String): Future[Boolean] = {
     gitHub.userMembershipOrgs(Some("active"), accessToken).map { jsArray =>
       val orgs = orgsWithRole(Seq("admin"))(jsArray)
-      orgs.exists(_.login == org)
-    }
-  }
-
-  private def hasOrgAccess(org: String, accessToken: String): Future[Boolean] = {
-    gitHub.userMembershipOrgs(Some("active"), accessToken).map { jsArray =>
-      val orgs = orgsWithRole(Seq("admin", "member"))(jsArray)
       orgs.exists(_.login == org)
     }
   }
