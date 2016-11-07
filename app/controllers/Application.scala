@@ -5,7 +5,7 @@ import javax.inject.Inject
 import models._
 import modules.Database
 import org.joda.time.LocalDateTime
-import play.api.Environment
+import play.api.{Environment, Logger}
 import play.api.libs.json.{JsArray, JsObject, JsValue, Json}
 import play.api.mvc._
 import utils.{Crypto, GitHub}
@@ -85,9 +85,17 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
           contactsCreated <- createContactIfNeededFuture
           claSignaturesCreated <- db.execute(CreateClaSignature(claSignature))
           if claSignaturesCreated == 1
-          _ <- revalidatePullRequests(claSignature.contact.gitHubId) // todo: maybe do this off the request thread
-        } yield Redirect(routes.Application.signedCla())
+        } yield {
+          revalidatePullRequests(claSignature.contact.gitHubId).onFailure {
+            case e: Exception => Logger.error("Could not revalidate PRs", e)
+          }
+          Redirect(routes.Application.signedCla())
+        }
       }
+    } recover {
+      case _ =>
+        Logger.error("CLA could not be signed. " + request.body.toString())
+        InternalServerError("Could not sign the CLA, please contact oss-cla@salesforce.com")
     }
 
   }
@@ -360,7 +368,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
   }
 
   private def pullRequestHasContributorAndState(contributorId: String, state: String)(pullRequest: JsObject): Boolean = {
-    val contributors = (pullRequest \ "commits").as[JsArray].value.map(_.\("author").\("login").as[String])
+    val contributors = (pullRequest \ "commits").asOpt[JsArray].getOrElse(JsArray()).value.map(_.\("author").\("login").as[String])
     val prState = (pullRequest \ "status" \ "state").as[String]
     contributors.contains(contributorId) && (state == prState)
   }
