@@ -18,7 +18,7 @@ libraryDependencies ++= Seq(
   "com.github.mauricio"    %% "postgresql-async"                   % "0.2.20",
   "com.kyleu"              %% "jdub-async"                         % "1.0",
 
-  "org.webjars"            %% "webjars-play"                       % "2.5.0-2",
+  "org.webjars"            %% "webjars-play"                       % "2.5.0-3",
   "org.webjars"            %  "salesforce-lightning-design-system" % "0.10.1",
   "org.webjars"            %  "octicons"                           % "3.1.0",
   "org.webjars.bower"      %  "signature_pad"                      % "1.5.1",
