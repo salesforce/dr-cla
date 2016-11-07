@@ -23,7 +23,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
   val gitHubOauthScopesForAudit = Seq("read:org")
 
   def wellKnown = Action {
-    Ok("MqEhON-vRODAO5Dpz022_4giSwmPYA7mhzPFTcoE8qE.Xuyp9lLbA7MdhO4SM9lxZNpSdIE51haMPkZe962uin0")
+    Ok("u7z9WBJjcmsSQ-85QrlETUoPQi8FXTDbe5_8sv-voow.Xuyp9lLbA7MdhO4SM9lxZNpSdIE51haMPkZe962uin0")
   }
 
   // state is used for the URL to redirect to
