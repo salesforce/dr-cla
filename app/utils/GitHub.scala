@@ -7,7 +7,6 @@ import play.api.Configuration
 import play.api.http.{HeaderNames, MimeTypes, Status}
 import play.api.libs.json.Reads._
 import play.api.libs.json._
-import play.api.libs.functional.syntax._
 import play.api.libs.ws.{WSClient, WSRequest, WSResponse}
 import play.api.mvc.Results.EmptyContent
 
@@ -46,15 +45,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
     }
   }
 
-  // deals with pagination
-  // todo: extract paging logic
-  private def userOrOrgRepos(userOrOrg: Either[String, String], accessToken: String, pageSize: Int = 100): Future[JsArray] = {
-
-    val path = userOrOrg match {
-      case Left(user) => s"users/$user/repos"
-      case Right(org) => s"orgs/$org/repos"
-    }
-
+  private def fetchPages(path: String, accessToken: String, pageSize: Int = 100): Future[JsArray] = {
     import io.netty.handler.codec.http.QueryStringDecoder
     import collection.JavaConverters._
 
@@ -88,6 +79,17 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
       // assume numeric paging so we can parallelize
       Future.fold(pagesFutures)(firstPageRepos)(_ ++ _)
     }
+  }
+
+  // deals with pagination
+  private def userOrOrgRepos(userOrOrg: Either[String, String], accessToken: String, pageSize: Int): Future[JsArray] = {
+
+    val path = userOrOrg match {
+      case Left(user) => s"users/$user/repos"
+      case Right(org) => s"orgs/$org/repos"
+    }
+
+    fetchPages(path, accessToken)
   }
 
   def userRepos(user: String, accessToken: String, pageSize: Int = 100): Future[JsArray] = {
@@ -306,7 +308,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
 
   def orgMembers(org: String, accessToken: String): Future[JsArray] = {
     val path = s"orgs/$org/members"
-    ws(path, accessToken).get().flatMap(ok[JsArray])
+    fetchPages(path, accessToken)
   }
 
   def orgMembersAdd(org: String, username: String, accessToken: String): Future[JsObject] = {
