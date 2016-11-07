@@ -205,4 +205,11 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
     }
   }
 
+  "GitHub.pullRequestsToBeValidated" must {
+    "work" in {
+      val pullRequests = await(gitHub.pullRequestsToBeValidated("jamesward-demo", gitHub.integrationToken))
+      pullRequests must not be null
+    }
+  }
+
 }

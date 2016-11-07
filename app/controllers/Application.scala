@@ -119,7 +119,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
           Future.successful(Ok)
         case "open" =>
           for {
-            pullRequestWithCommitsAndStatus <- pullRequestWithCommitsAndStatus(pullRequest)
+            pullRequestWithCommitsAndStatus <- gitHub.pullRequestWithCommitsAndStatus(gitHub.integrationToken)(pullRequest)
             validate <- validatePullRequests(Seq(pullRequestWithCommitsAndStatus))
           } yield Ok
       }
@@ -193,26 +193,22 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
 
     val repoCommitsFuture = gitHub.repoCommits(ownerRepo, accessToken)
 
-    def commitAuthor(json: JsValue): String = {
-      (json \ "author" \ "login").asOpt[String].getOrElse((json \ "commit" \ "author" \ "email").as[String])
-    }
-
     for {
       internalContributors <- internalContributorsFuture.map(_.value.map(_.\("login").as[String]).distinct.toSet)
       repoCommits <- repoCommitsFuture
-      authors = repoCommits.value.map(commitAuthor).distinct.toSet
+      authors = repoCommits.value.map(gitHub.commitAuthor).distinct.toSet
       externalContributors = authors.diff(internalContributors)
       clasForExternalContributors <- db.query(GetClaSignatures(externalContributors))
     } yield {
 
       val externalContributorsDetails = externalContributors.map { gitHubId =>
         val maybeClaSignature = clasForExternalContributors.find(_.contact.gitHubId == gitHubId)
-        val commits = repoCommits.value.filter(commitAuthor(_) == gitHubId)
+        val commits = repoCommits.value.filter(gitHub.commitAuthor(_) == gitHubId)
         gitHubId -> (maybeClaSignature, commits)
       }.toMap
 
       val internalContributorsDetails = internalContributors.map { gitHubId =>
-        val commits = repoCommits.value.filter(commitAuthor(_) == gitHubId)
+        val commits = repoCommits.value.filter(gitHub.commitAuthor(_) == gitHubId)
         gitHubId -> commits
       }.toMap.filter { case (_, commits) =>
         commits.nonEmpty
@@ -348,39 +344,10 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
     }
   }
 
-  private def pullRequestWithCommitsAndStatus(pullRequest: JsValue): Future[JsObject] = {
-    val ownerRepo = (pullRequest \ "base" \ "repo" \ "full_name").as[String]
-    val prId = (pullRequest \ "number").as[Int]
-    val ref = (pullRequest \ "head" \ "sha").as[String]
-    val commitsFuture = gitHub.pullRequestCommits(ownerRepo, prId, gitHub.integrationToken)
-    val statusFuture = gitHub.commitStatus(ownerRepo, ref, gitHub.integrationToken)
-    for {
-      commits <- commitsFuture
-      status <- statusFuture
-    } yield {
-      // combine the pull request, commits, and status into one json object
-      Json.obj(
-        "pull_request" -> pullRequest,
-        "commits" -> commits,
-        "status" -> status
-      )
-    }
-  }
-
-  private def pullRequestHasContributorAndState(contributorId: String, state: String)(pullRequest: JsObject): Boolean = {
-    val contributors = (pullRequest \ "commits").asOpt[JsArray].getOrElse(JsArray()).value.map(_.\("author").\("login").as[String])
-    val prState = (pullRequest \ "status" \ "state").as[String]
-    contributors.contains(contributorId) && (state == prState)
-  }
-
   // todo: add some caching
   private def revalidatePullRequests(signerGitHubId: String)(implicit request: RequestHeader): Future[JsValue] = {
     for {
-      repos <- gitHub.allRepos(gitHub.integrationToken)
-      repoNames = repos.value.map(_.\("full_name").as[String])
-      allPullRequests <- Future.sequence(repoNames.map(ownerRepo => gitHub.pullRequests(ownerRepo, gitHub.integrationToken)))
-      pullRequestWithCommitsAndStatus <- Future.sequence(allPullRequests.flatMap(_.value).map(pullRequestWithCommitsAndStatus))
-      pullRequestsToBeValidated = pullRequestWithCommitsAndStatus.filter(pullRequestHasContributorAndState(signerGitHubId, "failure"))
+      pullRequestsToBeValidated <- gitHub.pullRequestsToBeValidated(signerGitHubId, gitHub.integrationToken)
       validation <- validatePullRequests(pullRequestsToBeValidated)
     } yield validation
   }

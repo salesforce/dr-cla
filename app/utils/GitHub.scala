@@ -329,6 +329,44 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
     ws(path, accessToken).get().flatMap(ok[JsArray])
   }
 
+  def pullRequestWithCommitsAndStatus(accessToken:String)(pullRequest: JsValue): Future[JsObject] = {
+    val ownerRepo = (pullRequest \ "base" \ "repo" \ "full_name").as[String]
+    val prId = (pullRequest \ "number").as[Int]
+    val ref = (pullRequest \ "head" \ "sha").as[String]
+    val commitsFuture = pullRequestCommits(ownerRepo, prId, accessToken)
+    val statusFuture = commitStatus(ownerRepo, ref, accessToken)
+    for {
+      commits <- commitsFuture
+      status <- statusFuture
+    } yield {
+      // combine the pull request, commits, and status into one json object
+      Json.obj(
+        "pull_request" -> pullRequest,
+        "commits" -> commits,
+        "status" -> status
+      )
+    }
+  }
+
+  def commitAuthor(json: JsValue): String = {
+    (json \ "author" \ "login").asOpt[String].getOrElse((json \ "commit" \ "author" \ "email").as[String])
+  }
+
+  private def pullRequestHasContributorAndState(contributorId: String, state: String)(pullRequest: JsObject): Boolean = {
+    val contributors = (pullRequest \ "commits").as[JsArray].value.map(commitAuthor)
+    val prState = (pullRequest \ "status" \ "state").as[String]
+    contributors.contains(contributorId) && (state == prState)
+  }
+
+  def pullRequestsToBeValidated(signerGitHubId: String, accessToken: String): Future[Seq[JsObject]] = {
+    for {
+      repos <- allRepos(accessToken)
+      repoNames = repos.value.map(_.\("full_name").as[String])
+      allPullRequests <- Future.sequence(repoNames.map(ownerRepo => pullRequests(ownerRepo, accessToken)))
+      pullRequestWithCommitsAndStatus <- Future.sequence(allPullRequests.flatMap(_.value).map(pullRequestWithCommitsAndStatus(accessToken)))
+    } yield pullRequestWithCommitsAndStatus.filter(pullRequestHasContributorAndState(signerGitHubId, "failure"))
+  }
+
   private def ok[A](response: WSResponse)(implicit w: Reads[A]): Future[A] = status(Status.OK, response).flatMap { jsValue =>
     jsValue.asOpt[A].fold {
       Future.failed[A](new IllegalStateException("Data was not in the expected form"))
