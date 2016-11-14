@@ -19,7 +19,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
   val claVersions = Set("0.0")
   val latestClaVersion = claVersions.head
 
-  val gitHubOauthScopesForClaSigning = Seq("user","user:email")
+  val gitHubOauthScopesForClaSigning = Seq("user:email")
   val gitHubOauthScopesForAudit = Seq("read:org")
 
   def wellKnown = Action {
