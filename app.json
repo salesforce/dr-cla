@@ -1,0 +1,11 @@
+{
+  "name": "Salesforce CLA",
+  "env": {
+    "APPLICATION_SECRET": {
+      "generator": "secret"
+    }
+  },
+  "addons": [
+    "heroku-postgresql"
+  ]
+}
