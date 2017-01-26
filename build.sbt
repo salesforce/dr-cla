@@ -15,7 +15,7 @@ libraryDependencies ++= Seq(
   "org.postgresql"         %  "postgresql"                         % "9.4-1203-jdbc42",
   "org.flywaydb"           %% "flyway-play"                        % "3.0.0",
 
-  "com.github.mauricio"    %% "postgresql-async"                   % "0.2.20",
+  "com.github.mauricio"    %% "postgresql-async"                   % "0.2.21",
   "com.kyleu"              %% "jdub-async"                         % "1.0",
 
   "org.webjars"            %% "webjars-play"                       % "2.5.0-3",
