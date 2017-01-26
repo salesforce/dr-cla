@@ -7,6 +7,7 @@ import modules.Database
 import org.joda.time.LocalDateTime
 import play.api.{Environment, Logger}
 import play.api.libs.json.{JsArray, JsObject, JsValue, Json}
+import play.api.mvc.Results.EmptyContent
 import play.api.mvc._
 import utils.{Crypto, GitHub}
 
@@ -22,8 +23,9 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
   val gitHubOauthScopesForClaSigning = Seq("user:email")
   val gitHubOauthScopesForAudit = Seq("read:org")
 
-  def wellKnown = Action {
-    Ok("bNrYGWE7oh4KMPehC-yoUvJ5BDiuES2T9brxh6Lwudk.Xuyp9lLbA7MdhO4SM9lxZNpSdIE51haMPkZe962uin0")
+  def wellKnown(key: String) = Action {
+    val maybeAuth = sys.env.get(key)
+    maybeAuth.fold(NotFound(EmptyContent()))(Ok(_))
   }
 
   // state is used for the URL to redirect to
