@@ -116,14 +116,16 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
       }
     } { pullRequest =>
       val state = (pullRequest \ "state").as[String]
-      state match {
-        case "closed" =>
-          Future.successful(Ok)
-        case "open" =>
+      val userType = (pullRequest \ "user" \ "type").as[String]
+      (state, userType) match {
+        // Only run the validator for open pull requests where the user is a user (i.e. not a bot)
+        case ("open", "User") =>
           for {
             pullRequestWithCommitsAndStatus <- gitHub.pullRequestWithCommitsAndStatus(gitHub.integrationToken)(pullRequest)
             validate <- validatePullRequests(Seq(pullRequestWithCommitsAndStatus))
           } yield Ok
+        case _ =>
+          Future.successful(Ok)
       }
     }
   }
