@@ -4,6 +4,7 @@ import javax.inject.Inject
 
 import models._
 import modules.Database
+import org.apache.commons.codec.digest.HmacUtils
 import org.joda.time.LocalDateTime
 import play.api.{Configuration, Environment, Logger}
 import play.api.libs.json.{JsArray, JsObject, JsValue, Json}
@@ -134,6 +135,32 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
         case _ =>
           Future.successful(Ok)
       }
+    }
+  }
+
+  def webhookIntegration = Action.async(parse.json) { implicit request =>
+    val maybeHubSignature = request.headers.get("X-Hub-Signature")
+
+    // first check if a signature was sent, if not then we don't need auth
+    val authorized = maybeHubSignature.fold(true) { hubSignature =>
+      // if a signature was sent, validate it against a configured secret token
+      gitHub.maybeIntegrationSecretToken.fold(false) { integrationSecretToken =>
+        hubSignature == "sha1=" + HmacUtils.hmacSha1Hex(integrationSecretToken, request.body.toString())
+      }
+    }
+
+    if (authorized) {
+      val action = (request.body \ "action").as[String]
+
+      action match {
+        case "created" =>
+          Future.successful(Ok)
+        case _ =>
+          Future.successful(BadRequest(s"Did not understand action = $action"))
+      }
+    }
+    else {
+      Future.successful(Unauthorized)
     }
   }
 

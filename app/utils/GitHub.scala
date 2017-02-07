@@ -19,6 +19,8 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
   val clientSecret = configuration.getString("github.oauth.client-secret").get
   val integrationToken = configuration.getString("github.token").get
 
+  val maybeIntegrationSecretToken = configuration.getString("github.integration.secret-token")
+
   def ws(path: String, accessToken: String): WSRequest = {
     ws
       .url(s"https://api.github.com/$path")
