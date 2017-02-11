@@ -9,7 +9,7 @@ import play.api.test.Helpers._
 
 class ClaSignatureSpec extends PlaySpec with OneAppPerSuite {
 
-  val dbUrl = sys.env.get("DATABASE_URL").getOrElse("postgres://salesforcecla:password@localhost:5432/salesforcecla-test")
+  val dbUrl = sys.env.getOrElse("DATABASE_URL", "postgres://salesforcecla:password@localhost:5432/salesforcecla-test")
 
   val testConfig = Map("db.default.url" -> dbUrl)
 
