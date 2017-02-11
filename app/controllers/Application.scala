@@ -5,7 +5,7 @@ import javax.inject.Inject
 import models._
 import modules.Database
 import org.joda.time.LocalDateTime
-import play.api.{Environment, Logger}
+import play.api.{Configuration, Environment, Logger}
 import play.api.libs.json.{JsArray, JsObject, JsValue, Json}
 import play.api.mvc.Results.EmptyContent
 import play.api.mvc._
@@ -15,7 +15,7 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.io.Source
 
 
-class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, crypto: Crypto) (implicit staticWebJarAssets: StaticWebJarAssets, ec: ExecutionContext) extends Controller {
+class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, crypto: Crypto, configuration: Configuration) (implicit staticWebJarAssets: StaticWebJarAssets, ec: ExecutionContext) extends Controller {
 
   val claVersions = Set("0.0")
   val latestClaVersion = claVersions.head
@@ -24,8 +24,14 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
   val gitHubOauthScopesForAudit = Seq("read:org")
 
   def wellKnown(key: String) = Action {
-    val maybeAuth = sys.env.get(key)
-    maybeAuth.fold(NotFound(EmptyContent()))(Ok(_))
+    configuration.getString("wellknown").fold(NotFound(EmptyContent())) { wellKnownKeyValue =>
+      if (wellKnownKeyValue.startsWith(key + "=")) {
+        Ok(wellKnownKeyValue.stripPrefix(key + "="))
+      }
+      else {
+        NotFound(EmptyContent())
+      }
+    }
   }
 
   // state is used for the URL to redirect to

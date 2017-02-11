@@ -30,17 +30,17 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
   val gitHub = new GitHub(app.configuration, wsClient)(ExecutionContext.global)
 
   "GitHub.allRepos" must {
-    "fetch all the repos with 9 pages" in {
+    "fetch all the repos with 10 pages" in {
       val repos = await(gitHub.userRepos("jamesward-test", gitHub.integrationToken, 1))
-      repos.value.length must equal (9)
+      repos.value.length must equal (10)
     }
     "fetch all the repos without paging" in {
-      val repos = await(gitHub.userRepos("jamesward-test", gitHub.integrationToken, 7))
-      repos.value.length must equal (9)
+      val repos = await(gitHub.userRepos("jamesward-test", gitHub.integrationToken, Int.MaxValue))
+      repos.value.length must equal (10)
     }
     "fetch all the repos with 2 pages" in {
-      val repos = await(gitHub.userRepos("jamesward-test", gitHub.integrationToken, 4))
-      repos.value.length must equal (9)
+      val repos = await(gitHub.userRepos("jamesward-test", gitHub.integrationToken, 5))
+      repos.value.length must equal (10)
     }
   }
 
