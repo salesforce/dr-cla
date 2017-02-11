@@ -28,7 +28,7 @@ class FiltersSpec extends PlaySpec with OneAppPerSuite {
       status(result) mustEqual MOVED_PERMANENTLY
     }
     "not force https for well-known requests" in {
-      val Some(result) = route(app, FakeRequest(GET, controllers.routes.Application.wellKnown().url))
+      val Some(result) = route(app, FakeRequest(GET, controllers.routes.Application.wellKnown("").url))
       status(result) mustEqual OK
     }
     "not force https for non-forwarded requests" in {
