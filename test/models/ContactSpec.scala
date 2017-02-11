@@ -8,7 +8,9 @@ import play.api.test.Helpers._
 
 class ContactSpec extends PlaySpec with OneAppPerSuite {
 
-  val testConfig = Map("db.default.url" -> "postgres://salesforcecla:password@localhost:5432/salesforcecla-test")
+  val dbUrl = sys.env.get("DATABASE_URL").getOrElse("postgres://salesforcecla:password@localhost:5432/salesforcecla-test")
+
+  val testConfig = Map("db.default.url" -> dbUrl)
 
   implicit override lazy val app = new GuiceApplicationBuilder().configure(testConfig).build()
 
