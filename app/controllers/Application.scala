@@ -96,7 +96,6 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
           claSignaturesCreated <- db.execute(CreateClaSignature(claSignature))
           if claSignaturesCreated == 1
         } yield {
-          // todo: support integrations
           revalidatePullRequests(claSignature.contact.gitHubId, gitHub.integrationToken).onFailure {
             case e: Exception => Logger.error("Could not revalidate PRs", e)
           }
