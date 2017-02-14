@@ -150,7 +150,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
     val json = Json.obj(
       "state" -> state,
       "target_url" -> url,
-      "description" -> description,
+      "description" -> description.take(140),
       "context" -> context
     )
 
@@ -417,11 +417,11 @@ object GitHub {
     implicit val jsonReads: Reads[Org] = (__ \ "organization" \ "login").read[String].map(Org(_))
   }
 
-  case class AuthorLoginNotFound(url: String, author: JsObject) extends Exception {
+  case class AuthorLoginNotFound(sha: String, author: JsObject) extends Exception {
     override def getMessage: String = {
       val maybeName = (author \ "name").asOpt[String]
-      maybeName.fold(s"Could not find a GitHub user on the commit at: $url") { name =>
-        s"Could not find a GitHub user for $name on the commit at: $url"
+      maybeName.fold(s"Could not find a GitHub user on commit $sha") { name =>
+        s"Could not find a GitHub user for $name on commit $sha"
       }
     }
   }

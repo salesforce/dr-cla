@@ -295,8 +295,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
         val prCommittersFuture = prCommitsFuture.flatMap { commits =>
           val commitsWithMaybeLogins = commits.value.map { commit =>
             val maybeAuthorLogin = (commit \ "author" \ "login").asOpt[String]
-            val url = (commit \ "html_url").as[String]
-            maybeAuthorLogin.fold(Future.failed[String](AuthorLoginNotFound(url, (commit \ "commit" \ "author").as[JsObject])))(Future.successful)
+            maybeAuthorLogin.fold(Future.failed[String](AuthorLoginNotFound(sha, (commit \ "commit" \ "author").as[JsObject])))(Future.successful)
           }
 
           Future.sequence(commitsWithMaybeLogins)
