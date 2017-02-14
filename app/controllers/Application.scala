@@ -9,6 +9,7 @@ import play.api.{Configuration, Environment, Logger}
 import play.api.libs.json.{JsArray, JsObject, JsValue, Json}
 import play.api.mvc.Results.EmptyContent
 import play.api.mvc._
+import utils.GitHub.AuthorLoginNotFound
 import utils.{Crypto, GitHub}
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -291,8 +292,14 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
 
         val prCommitsFuture = gitHub.pullRequestCommits(ownerRepo, prNumber, gitHub.integrationToken)
 
-        val prCommittersFuture = prCommitsFuture.map { commits =>
-          commits.value.map(_.\("author").\("login").as[String])
+        val prCommittersFuture = prCommitsFuture.flatMap { commits =>
+          val commitsWithMaybeLogins = commits.value.map { commit =>
+            val maybeAuthorLogin = (commit \ "author" \ "login").asOpt[String]
+            val url = (commit \ "html_url").as[String]
+            maybeAuthorLogin.fold(Future.failed[String](AuthorLoginNotFound(url, (commit \ "commit" \ "author").as[JsObject])))(Future.successful)
+          }
+
+          Future.sequence(commitsWithMaybeLogins)
         }
 
         val existingCommittersFuture = gitHub.collaborators(ownerRepo, gitHub.integrationToken).map(_.value.map(_.\("login").as[String]))
@@ -313,40 +320,46 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
 
         val repoLabelsFuture = gitHub.getAllLabels(ownerRepo, gitHub.integrationToken).map(_.value.map(_.\("name").as[String]).distinct.toList)
 
-        val labelMap = Map(("cla:missing","c40d0d"),("cla:signed","5ebc41"))
+        val labelMap = Map("cla:missing" -> "c40d0d","cla:signed" -> "5ebc41")
 
         val labelCreatesFuture: Future[Seq[JsValue]] = repoLabelsFuture.flatMap { labels =>
           val labelsToCreate: Seq[String] = labelMap.keys.toList.diff(labels)
           gitHub.createLabels(ownerRepo, labelMap.filterKeys(labelsToCreate.contains), gitHub.integrationToken)
         }
 
-        committersWithoutClasFuture.flatMap { committersWithoutClas =>
+        labelCreatesFuture.flatMap { _ =>
+          committersWithoutClasFuture.flatMap { committersWithoutClas =>
 
-          val state = if (committersWithoutClas.isEmpty) "success" else "failure"
-          val description = if (committersWithoutClas.isEmpty) "All contributors have signed the CLA" else "One or more contributors need to sign the CLA"
+            val state = if (committersWithoutClas.isEmpty) "success" else "failure"
+            val description = if (committersWithoutClas.isEmpty) "All contributors have signed the CLA" else "One or more contributors need to sign the CLA"
 
-          gitHub.createStatus(ownerRepo, sha, state, claUrl, description, "salesforce-cla", gitHub.integrationToken).flatMap { status =>
+            gitHub.createStatus(ownerRepo, sha, state, claUrl, description, "salesforce-cla", gitHub.integrationToken).flatMap { status =>
 
-            // don't re-comment on the PR
-            gitHub.issueComments(ownerRepo, prNumber, gitHub.integrationToken).flatMap { comments =>
-              val alreadyCommented = comments.value.exists(_.\("user").\("login").as[String] == integrationUserId)
+              // don't re-comment on the PR
+              // todo: we can comment if the state is error
+              gitHub.issueComments(ownerRepo, prNumber, gitHub.integrationToken).flatMap { comments =>
+                val alreadyCommented = comments.value.exists(_.\("user").\("login").as[String] == integrationUserId)
 
-              if (committersWithoutClas.nonEmpty) {
-                gitHub.toggleLabelSafe(ownerRepo, "cla:missing", "cla:signed", alreadyCommented, prNumber, gitHub.integrationToken)
+                if (committersWithoutClas.nonEmpty) {
+                  gitHub.toggleLabelSafe(ownerRepo, "cla:missing", "cla:signed", alreadyCommented, prNumber, gitHub.integrationToken)
 
-                if(!alreadyCommented) {
-                  val body = s"Thanks for the contribution!  Before we can merge this, we need ${committersWithoutClas.map(" @" + _).mkString} to [sign the Salesforce Contributor License Agreement]($claUrl)."
-                  gitHub.commentOnIssue(ownerRepo, prNumber, body, gitHub.integrationToken)
-                } else {
+                  if (!alreadyCommented) {
+                    val body = s"Thanks for the contribution!  Before we can merge this, we need ${committersWithoutClas.map(" @" + _).mkString} to [sign the Salesforce Contributor License Agreement]($claUrl)."
+                    gitHub.commentOnIssue(ownerRepo, prNumber, body, gitHub.integrationToken)
+                  } else {
+                    Future.successful(status)
+                  }
+                }
+                else {
+                  gitHub.toggleLabelSafe(ownerRepo, "cla:signed", "cla:missing", alreadyCommented, prNumber, gitHub.integrationToken)
                   Future.successful(status)
                 }
               }
-              else {
-                gitHub.toggleLabelSafe(ownerRepo, "cla:signed", "cla:missing", alreadyCommented, prNumber, gitHub.integrationToken)
-                Future.successful(status)
-              }
             }
           }
+        } recoverWith {
+          case e: AuthorLoginNotFound =>
+            gitHub.createStatus(ownerRepo, sha, "error", claUrl, e.getMessage, "salesforce-cla", gitHub.integrationToken)
         }
       }
 

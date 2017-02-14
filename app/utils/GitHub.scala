@@ -417,4 +417,13 @@ object GitHub {
     implicit val jsonReads: Reads[Org] = (__ \ "organization" \ "login").read[String].map(Org(_))
   }
 
+  case class AuthorLoginNotFound(url: String, author: JsObject) extends Exception {
+    override def getMessage: String = {
+      val maybeName = (author \ "name").asOpt[String]
+      maybeName.fold(s"Could not find a GitHub user on the commit at: $url") { name =>
+        s"Could not find a GitHub user for $name on the commit at: $url"
+      }
+    }
+  }
+
 }
