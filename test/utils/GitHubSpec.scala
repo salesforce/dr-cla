@@ -126,6 +126,7 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
 
   "GitHub.allRepos" must {
     "fetch all the repos with 10 pages" in {
+      (testRepo1, testRepo2, testRepo3) // create 3 repos lazily
       val repos = await(gitHub.userRepos(testLogin1, testToken1, 1))
       repos.value.length must be >= 3
     }
