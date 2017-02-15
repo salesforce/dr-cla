@@ -132,7 +132,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
   private def userOrOrgRepos(userOrOrg: Either[String, String], accessToken: String, pageSize: Int): Future[JsArray] = {
 
     val path = userOrOrg match {
-      case Left(user) => s"users/$user/repos"
+      case Left(user) => s"user/repos"
       case Right(org) => s"orgs/$org/repos"
     }
 
@@ -182,13 +182,18 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
 
   def getPullRequest(ownerRepo: String, pullRequestId: Int, accessToken: String): Future[JsValue] = {
     val path = s"repos/$ownerRepo/pulls/$pullRequestId"
-
     ws(path, accessToken).get().flatMap(okT[JsValue])
   }
 
   def pullRequests(ownerRepo: String, accessToken: String): Future[JsArray] = {
     val path = s"repos/$ownerRepo/pulls"
-    ws(path, accessToken).get().flatMap(okT[JsArray])
+    ws(path, accessToken).get().flatMap { response =>
+      response.status match {
+        // sometimes GitHub says we have access to a repo, but it doesn't actually exist
+        case Status.NOT_FOUND => Future.successful(JsArray())
+        case _ => okT[JsArray](response)
+      }
+    }
   }
 
   def createStatus(ownerRepo: String, sha: String, state: String, url: String, description: String, context: String, accessToken: String): Future[JsValue] = {
@@ -455,6 +460,10 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
     ws(s"repos/$ownerRepo/pulls", accessToken).post(json).flatMap(createdT[JsObject])
   }
 
+  def addCollaborator(ownerRepo: String, username: String, accessToken: String): Future[Unit] = {
+    ws(s"repos/$ownerRepo/collaborators/$username", accessToken).put(EmptyContent()).flatMap(nocontent)
+  }
+
   private def pullRequestHasContributorAndState(contributorId: String, state: String)(pullRequest: JsObject): Boolean = {
     val contributors = (pullRequest \ "commits").as[JsArray].value.map(commitAuthor)
     val prState = (pullRequest \ "status" \ "state").as[String]
@@ -463,7 +472,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
 
   // todo: optimize this
   private def pullRequestsNeedingValidationForAccessToken(signerGitHubId: String, repos: Seq[JsObject], accessToken: String): Future[Map[JsObject, String]] = {
-    val repoNames = repos.map(_.\("full_name").as[String])
+    val repoNames = repos.map(_.\("full_name").as[String]).toSet
 
     for {
       allPullRequests <- Future.sequence(repoNames.map(ownerRepo => pullRequests(ownerRepo, accessToken)))
