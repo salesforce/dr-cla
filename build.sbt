@@ -12,6 +12,8 @@ libraryDependencies ++= Seq(
   ws,
   filters,
 
+  "com.pauldijou"          %% "jwt-play-json"                      % "0.9.2",
+
   "org.postgresql"         %  "postgresql"                         % "9.4-1203-jdbc42",
   "org.flywaydb"           %% "flyway-play"                        % "3.0.0",
 
