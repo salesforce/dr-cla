@@ -32,12 +32,12 @@ class ClaSignatureSpec extends PlaySpec with OneAppPerSuite {
     }
     "be queryable with one github id" in {
       val claSignatures = await(db.query(GetClaSignatures(Set("foobar"))))
-      claSignatures.length mustEqual 1
+      claSignatures.size mustEqual 1
       claSignatures.head.contact.gitHubId mustEqual "foobar"
     }
     "be queryable with a set of github ids" in {
       val claSignatures = await(db.query(GetClaSignatures(Set("foobar", "jondoe"))))
-      claSignatures.length mustEqual 1
+      claSignatures.size mustEqual 1
       claSignatures.head.contact.gitHubId mustEqual "foobar"
     }
   }

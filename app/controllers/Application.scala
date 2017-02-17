@@ -118,8 +118,8 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
     override def getMessage: String = "A pull request could not be found"
   }
 
-  private def handlePullRequest(jsValue: JsValue, token: String)(implicit request: RequestHeader): Future[JsArray] = {
-    (jsValue \ "pull_request").asOpt[JsValue].fold(Future.failed[JsArray](NoPullRequest())) { pullRequest =>
+  private def handlePullRequest(jsValue: JsValue, token: String)(implicit request: RequestHeader): Future[Iterable[JsObject]] = {
+    (jsValue \ "pull_request").asOpt[JsValue].fold(Future.failed[Iterable[JsObject]](NoPullRequest())) { pullRequest =>
       val state = (pullRequest \ "state").as[String]
       val userType = (pullRequest \ "user" \ "type").as[String]
       (state, userType) match {
@@ -130,7 +130,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
             validate <- validatePullRequests(Map(pullRequestWithCommitsAndStatus -> token))
           } yield validate
         case _ =>
-          Future.successful(JsArray())
+          Future.successful(Iterable.empty[JsObject])
       }
     }
   }
@@ -344,7 +344,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
     }
   }
 
-  private def validatePullRequests(pullRequestsToBeValidated: Map[JsObject, String])(implicit request: RequestHeader): Future[JsArray] = {
+  private def validatePullRequests(pullRequestsToBeValidated: Map[JsObject, String])(implicit request: RequestHeader): Future[Iterable[JsObject]] = {
     val claUrl = routes.Application.signCla().absoluteURL()
     gitHub.validatePullRequests(pullRequestsToBeValidated, claUrl) { externalCommitters =>
       db.query(GetClaSignatures(externalCommitters))
@@ -353,7 +353,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
 
   // When someone signs the CLA we don't know what PR we need to update.
   // So get all the PRs we have access to, that have the contributor which just signed the CLA and where the status is failed.
-  private def revalidatePullRequests(signerGitHubId: String, token: String)(implicit request: RequestHeader): Future[JsValue] = {
+  private def revalidatePullRequests(signerGitHubId: String, token: String)(implicit request: RequestHeader): Future[Iterable[JsObject]] = {
     for {
       pullRequestsToBeValidated <- gitHub.pullRequestsToBeValidated(signerGitHubId, token)
       validation <- validatePullRequests(pullRequestsToBeValidated)

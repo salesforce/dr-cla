@@ -43,6 +43,8 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
 
   val maybeIntegrationSecretToken = configuration.getString("github.integration.secret-token")
 
+  val labels: Map[String, String] = Map(("cla:missing", "c40d0d"), ("cla:signed", "5ebc41"))
+
   def ws(path: String, accessToken: String): WSRequest = {
     ws
       .url(s"https://api.github.com/$path")
@@ -196,7 +198,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
     }
   }
 
-  def createStatus(ownerRepo: String, sha: String, state: String, url: String, description: String, context: String, accessToken: String): Future[JsValue] = {
+  def createStatus(ownerRepo: String, sha: String, state: String, url: String, description: String, context: String, accessToken: String): Future[JsObject] = {
     val path = s"repos/$ownerRepo/statuses/$sha"
 
     val json = Json.obj(
@@ -206,7 +208,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
       "context" -> context
     )
 
-    ws(path, accessToken).post(json).flatMap(created)
+    ws(path, accessToken).post(json).flatMap(createdT[JsObject])
   }
 
   def pullRequestCommits(ownerRepo: String, pullRequestId: Int, accessToken: String): Future[JsArray] = {
@@ -240,31 +242,14 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
     ws(path, accessToken).get().flatMap(okT[JsArray])
   }
 
-  def getAllLabels(ownerRepo: String, accessToken: String): Future[JsArray] = {
-    val path = s"repos/$ownerRepo/labels"
-    ws(path, accessToken).get().flatMap(okT[JsArray])
-  }
-
-  def createLabel(ownerRepo: String, name: String, color: String, accessToken: String): Future[JsValue] = {
-    val path = s"repos/$ownerRepo/labels"
+  def updateLabel(ownerRepo: String, name: String, color: String, accessToken: String): Future[JsValue] = {
+    val path = s"repos/$ownerRepo/labels/$name"
 
     val json = Json.obj(
       "name" -> name,
       "color" -> color
     )
-    ws(path, accessToken).post(json).flatMap(created)
-  }
-
-  def deleteLabel(ownerRepo: String, name: String, accessToken: String): Future[Unit] = {
-    val path = s"repos/$ownerRepo/labels/$name"
-    ws(path, accessToken).delete().flatMap(nocontent)
-  }
-
-  def createLabels(ownerRepo: String, labels: Map[String,String], accessToken: String): Future[Seq[JsValue]] = {
-    val labelCreateFutures = labels.map { labelColor =>
-      createLabel(ownerRepo, labelColor._1, labelColor._2, accessToken)
-    }
-    Future.sequence(labelCreateFutures.toList)
+    ws(path, accessToken).patch(json).flatMap(okT[JsValue])
   }
 
   def getIssueLabels(ownerRepo: String, issueNumber: Int, accessToken: String): Future[JsArray] = {
@@ -275,16 +260,16 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
   def applyLabel(ownerRepo: String, name: String, issueNumber: Int, accessToken: String): Future[JsArray] = {
     val path = s"repos/$ownerRepo/issues/$issueNumber/labels"
     val json =  Json.arr(name)
-    ws(path, accessToken).post(json).flatMap(okT[JsArray])
-  }
+    ws(path, accessToken).post(json).flatMap(okT[JsArray]).flatMap { jsArray =>
+      // validate the label has the correct color
+      val maybeColor = jsArray.value.find(_.\("name").as[String] == name).map(_.\("color").as[String])
+      val maybeCorrectColor = labels.get(name)
 
-  def applyLabelSafe(ownerRepo: String, name: String, issueNumber: Int, accessToken: String): Future[JsArray] = {
-    val issueLabelsFuture = getIssueLabels(ownerRepo, issueNumber, accessToken).map(_.value.map(_.\("name").as[String]).distinct.toList)
-    issueLabelsFuture.flatMap { labels =>
-      if (!labels.contains(name)) {
-        applyLabel(ownerRepo, name, issueNumber, accessToken)
-      } else {
-        Future.successful(Json.arr())
+      (maybeColor, maybeCorrectColor) match {
+        case (Some(color), Some(correctColor)) if color != correctColor =>
+          updateLabel(ownerRepo, name, correctColor, accessToken).flatMap(_ => getIssueLabels(ownerRepo, issueNumber, accessToken))
+        case _ =>
+          Future.successful(jsArray)
       }
     }
   }
@@ -295,38 +280,15 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
   // but actually returns 200 : OK
   def removeLabel(ownerRepo: String, name: String, issueNumber: Int, accessToken: String): Future[Unit] = {
     val path = s"repos/$ownerRepo/issues/$issueNumber/labels/$name"
-    ws(path, accessToken).delete().flatMap { response =>
-      response.status match {
-        case Status.OK => Future.successful(Unit)
-        case _ => Future.failed(new IllegalStateException(response.body))
-      }
-    }
+    ws(path, accessToken).delete().flatMap(ok)
   }
 
-  def removeLabelSafe(ownerRepo: String, name: String, issueNumber: Int, accessToken: String): Future[Unit] = {
-    val issueLabelsFuture = getIssueLabels(ownerRepo, issueNumber, accessToken).map(_.value.map(_.\("name").as[String]).distinct.toList)
+  def toggleLabel(ownerRepo: String, newLabel: String, oldLabel: String, issueNumber: Int, accessToken: String): Future[JsValue] = {
+    val applyLabelFuture = applyLabel(ownerRepo, newLabel, issueNumber, accessToken)
 
-    issueLabelsFuture.flatMap { labels =>
-      if (labels.contains(name)) {
-        removeLabel(ownerRepo, name, issueNumber, accessToken)
-      }
-      else {
-        Future.successful(Unit)
-      }
+    removeLabel(ownerRepo, oldLabel, issueNumber, accessToken).flatMap(_ => applyLabelFuture).recoverWith {
+      case _ => applyLabelFuture
     }
-  }
-
-  def toggleLabelSafe(ownerRepo: String, newLabel: String, oldLabel: String, remove: Boolean, issueNumber: Int, accessToken: String): Future[JsValue] = {
-    val removeLabelFuture = if (remove) {
-      removeLabelSafe(ownerRepo, oldLabel, issueNumber, accessToken)
-    }
-    else {
-      Future.successful(Unit)
-    }
-
-    val applyLabelSafeFuture = applyLabelSafe(ownerRepo, newLabel, issueNumber, accessToken)
-
-    removeLabelFuture.flatMap(_ => applyLabelSafeFuture)
   }
 
   def orgWebhooks(org: String, accessToken: String): Future[JsArray] = {
@@ -427,6 +389,10 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
     ws(path, accessToken).post(json).flatMap(createdT[JsObject])
   }
 
+  def repo(ownerRepo: String)(accessToken: String): Future[JsObject] = {
+    ws(s"repos/$ownerRepo", accessToken).get().flatMap(okT[JsObject])
+  }
+
   def deleteRepo(ownerRepo: String)(accessToken: String): Future[Unit] = {
     ws(s"repos/$ownerRepo", accessToken).delete().flatMap(nocontent)
   }
@@ -439,7 +405,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
     ws(s"repos/$ownerRepo/contents/$path", accessToken).get().flatMap(okT[JsObject])
   }
 
-  def editFile(ownerRepo: String, path: String, contents: String, commitMessage: String, sha: String, accessToken: String): Future[JsObject] = {
+  def editFile(ownerRepo: String, path: String, contents: String, commitMessage: String, sha: String, maybeBranch: Option[String] = None)(accessToken: String): Future[JsObject] = {
     val json = Json.obj(
       "path" -> path,
       "message" -> commitMessage,
@@ -447,7 +413,11 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
       "sha" -> sha
     )
 
-    ws(s"repos/$ownerRepo/contents/$path", accessToken).put(json).flatMap(okT[JsObject])
+    val jsonWithMaybeBranch = maybeBranch.fold(json) { branch =>
+      json + ("branch" -> JsString(branch))
+    }
+
+    ws(s"repos/$ownerRepo/contents/$path", accessToken).put(jsonWithMaybeBranch).flatMap(okT[JsObject])
   }
 
   def createPullRequest(ownerRepo: String, title: String, head: String, base: String, accessToken: String): Future[JsObject] = {
@@ -462,6 +432,15 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
 
   def addCollaborator(ownerRepo: String, username: String, accessToken: String): Future[Unit] = {
     ws(s"repos/$ownerRepo/collaborators/$username", accessToken).put(EmptyContent()).flatMap(nocontent)
+  }
+
+  def createBranch(ownerRepo: String, name: String, sha: String, accessToken: String): Future[JsObject] = {
+    val json = Json.obj(
+      "ref" -> s"refs/heads/$name",
+      "sha" -> sha
+    )
+
+    ws(s"repos/$ownerRepo/git/refs", accessToken).post(json).flatMap(createdT[JsObject])
   }
 
   private def pullRequestHasContributorAndState(contributorId: String, state: String)(pullRequest: JsObject): Boolean = {
@@ -522,92 +501,89 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
     } yield pullRequestsViaDirectAccess ++ pullRequestsViaIntegrations
   }
 
-  def validatePullRequests(pullRequests: Map[JsObject, String], claUrl: String)(clasForCommitters: (Set[String]) => Future[Seq[ClaSignature]]): Future[JsArray] = {
+  def pullRequestCommitters(ownerRepo: String, prNumber: Int, sha: String, accessToken: String): Future[Set[String]] = {
+    val prCommitsFuture = pullRequestCommits(ownerRepo, prNumber, accessToken)
 
-    val results = pullRequests.map { case (pullRequest, token) =>
-      integrationLoginFuture.flatMap { integrationLogin =>
+    prCommitsFuture.flatMap { commits =>
+      val commitsWithMaybeLogins = commits.value.map { commit =>
+        val maybeAuthorLogin = (commit \ "author" \ "login").asOpt[String]
+        maybeAuthorLogin.fold(Future.failed[String](GitHub.AuthorLoginNotFound(sha, (commit \ "commit" \ "author").as[JsObject])))(Future.successful)
+      }
 
+      Future.sequence(commitsWithMaybeLogins).map(_.toSet)
+    }
+  }
+
+  def externalContributors(ownerRepo: String, prNumber: Int, sha: String, accessToken: String): Future[Set[String]] = {
+    val pullRequestCommittersFuture = pullRequestCommitters(ownerRepo, prNumber, sha, accessToken)
+    val collaboratorsFuture = collaborators(ownerRepo, accessToken).map(_.value.map(_.\("login").as[String]).toSet)
+
+    for {
+      pullRequestCommitters <- pullRequestCommittersFuture
+      collaborators <- collaboratorsFuture
+    } yield pullRequestCommitters.diff(collaborators)
+  }
+
+  def committersWithoutClas(ownerRepo: String, prNumber: Int, sha: String, accessToken: String)(clasForCommitters: (Set[String]) => Future[Set[ClaSignature]]): Future[Set[String]] = {
+    for {
+      externalContributors <- externalContributors(ownerRepo, prNumber, sha, accessToken)
+      clasForCommitters <- clasForCommitters(externalContributors)
+    } yield {
+      // todo: maybe check latest CLA version
+      externalContributors.diff(clasForCommitters.map(_.contact.gitHubId))
+    }
+  }
+
+  def missingClaComment(ownerRepo: String, prNumber: Int, sha: String, claUrl: String, committersWithoutClas: Set[String], accessToken: String): Future[Either[JsValue, Unit]] = {
+    integrationLoginFuture.flatMap { integrationLogin =>
+      issueComments(ownerRepo, prNumber, accessToken).flatMap { comments =>
+        val alreadyCommented = comments.value.exists(_.\("user").\("login").as[String].startsWith(integrationLogin))
+        if (!alreadyCommented) {
+          val body = s"Thanks for the contribution!  Before we can merge this, we need ${committersWithoutClas.map(" @" + _).mkString} to [sign the Salesforce Contributor License Agreement]($claUrl)."
+          commentOnIssue(ownerRepo, prNumber, body, accessToken).map(Left(_))
+        }
+        else {
+          Future.successful(Right(Unit))
+        }
+      }
+    }
+  }
+
+  def updatePullRequestStatus(ownerRepo: String, prNumber: Int, sha: String, claUrl: String, committersWithoutClas: Set[String], accessToken: String): Future[JsObject] = {
+
+    val (state, description, toggleLabelFuture) = if (committersWithoutClas.isEmpty) {
+      ("success", "All contributors have signed the CLA", toggleLabel(ownerRepo, "cla:signed", "cla:missing", prNumber, accessToken))
+    }
+    else {
+      ("failure", "One or more contributors need to sign the CLA", toggleLabel(ownerRepo, "cla:missing", "cla:signed", prNumber, accessToken))
+    }
+
+    createStatus(ownerRepo, sha, state, claUrl, description, "salesforce-cla", accessToken)
+  }
+
+  def validatePullRequests(pullRequests: Map[JsObject, String], claUrl: String)(clasForCommitters: (Set[String]) => Future[Set[ClaSignature]]): Future[Iterable[JsObject]] = {
+    Future.sequence {
+      pullRequests.map { case (pullRequest, token) =>
         val ownerRepo = (pullRequest \ "pull_request" \ "base" \ "repo" \ "full_name").as[String]
         val prNumber = (pullRequest \ "pull_request" \ "number").as[Int]
         val sha = (pullRequest \ "pull_request" \ "head" \ "sha").as[String]
 
-        // update the PR status to pending
-        val prPendingFuture = createStatus(ownerRepo, sha, "pending", claUrl, "The CLA verifier is running", "salesforce-cla", token)
+        val pullRequestStatusFuture = for {
+          _ <- createStatus(ownerRepo, sha, "pending", claUrl, "The CLA verifier is running", "salesforce-cla", token)
+          committersWithoutClas <- committersWithoutClas(ownerRepo, prNumber, sha, token)(clasForCommitters)
+          _ <- missingClaComment(ownerRepo, prNumber, sha, claUrl, committersWithoutClas, token)
+          pullRequestStatus <- updatePullRequestStatus(ownerRepo, prNumber, sha, claUrl, committersWithoutClas, token)
+        } yield pullRequestStatus
 
-        val prCommitsFuture = pullRequestCommits(ownerRepo, prNumber, token)
-
-        val prCommittersFuture = prCommitsFuture.flatMap { commits =>
-          val commitsWithMaybeLogins = commits.value.map { commit =>
-            val maybeAuthorLogin = (commit \ "author" \ "login").asOpt[String]
-            maybeAuthorLogin.fold(Future.failed[String](GitHub.AuthorLoginNotFound(sha, (commit \ "commit" \ "author").as[JsObject])))(Future.successful)
-          }
-
-          Future.sequence(commitsWithMaybeLogins)
-        }
-
-        val existingCommittersFuture = collaborators(ownerRepo, token).map(_.value.map(_.\("login").as[String]))
-
-        val externalCommittersFuture = for {
-          _ <- prPendingFuture
-          prCommitters <- prCommittersFuture
-          existingCommitters <- existingCommittersFuture
-        } yield prCommitters.filterNot(existingCommitters.contains).toSet
-
-        val committersWithoutClasFuture = for {
-          externalCommitters <- externalCommittersFuture
-          clasForCommitters <- clasForCommitters(externalCommitters)
-        } yield {
-          // todo: maybe check latest CLA version
-          externalCommitters.filterNot(clasForCommitters.map(_.contact.gitHubId).contains)
-        }
-
-        val repoLabelsFuture = getAllLabels(ownerRepo, token).map(_.value.map(_.\("name").as[String]).distinct.toList)
-
-        val labelMap = Map(("cla:missing", "c40d0d"), ("cla:signed", "5ebc41"))
-
-        val labelCreatesFuture: Future[Seq[JsValue]] = repoLabelsFuture.flatMap { labels =>
-          val labelsToCreate: Seq[String] = labelMap.keys.toList.diff(labels)
-          createLabels(ownerRepo, labelMap.filterKeys(labelsToCreate.contains), token)
-        }
-
-        labelCreatesFuture.flatMap { _ =>
-          committersWithoutClasFuture.flatMap { committersWithoutClas =>
-
-            val state = if (committersWithoutClas.isEmpty) "success" else "failure"
-            val description = if (committersWithoutClas.isEmpty) "All contributors have signed the CLA" else "One or more contributors need to sign the CLA"
-
-            createStatus(ownerRepo, sha, state, claUrl, description, "salesforce-cla", token).flatMap { status =>
-
-              // don't re-comment on the PR
-              issueComments(ownerRepo, prNumber, token).flatMap { comments =>
-                val alreadyCommented = comments.value.exists(_.\("user").\("login").as[String].startsWith(integrationLogin))
-
-                if (committersWithoutClas.nonEmpty) {
-                  toggleLabelSafe(ownerRepo, "cla:missing", "cla:signed", alreadyCommented, prNumber, token)
-
-                  if (!alreadyCommented) {
-                    val body = s"Thanks for the contribution!  Before we can merge this, we need ${committersWithoutClas.map(" @" + _).mkString} to [sign the Salesforce Contributor License Agreement]($claUrl)."
-                    commentOnIssue(ownerRepo, prNumber, body, token)
-                  } else {
-                    Future.successful(status)
-                  }
-                }
-                else {
-                  toggleLabelSafe(ownerRepo, "cla:signed", "cla:missing", alreadyCommented, prNumber, token)
-                  Future.successful(status)
-                }
-              }
-            }
-          } recoverWith {
-            case e: GitHub.AuthorLoginNotFound =>
-              createStatus(ownerRepo, sha, "error", claUrl, e.getMessage, "salesforce-cla", token)
-          }
+        pullRequestStatusFuture.recoverWith {
+          case e: GitHub.AuthorLoginNotFound =>
+            createStatus(ownerRepo, sha, "error", claUrl, e.getMessage, "salesforce-cla", token)
         }
       }
     }
-
-    Future.fold(results)(Json.arr())(_ :+ _)
   }
+
+  private def ok(response: WSResponse): Future[Unit] = status(Status.OK, response)
 
   private def okT[T](response: WSResponse)(implicit r: Reads[T]): Future[T] = statusT[T](Status.OK, response)
 
@@ -615,21 +591,23 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
 
   private def createdT[T](response: WSResponse)(implicit r: Reads[T]): Future[T] = statusT[T](Status.CREATED, response)
 
+  private def nocontent(response: WSResponse): Future[Unit] = status(Status.NO_CONTENT, response)
+
   private def statusT[T](statusCode: Int, response: WSResponse)(implicit r: Reads[T]): Future[T] = {
     if (response.status == statusCode) {
       response.json.asOpt[T].fold {
-        Future.failed[T](new IllegalStateException("Data was not in the expected form"))
+        Future.failed[T](GitHub.InvalidResponseBody(response.body))
       } (Future.successful)
     } else {
-      Future.failed(new IllegalStateException(s"Expected status code $statusCode but got ${response.status}"))
+      Future.failed(GitHub.IncorrectResponseStatus(statusCode, response.status, response.body))
     }
   }
 
-  private def nocontent(response: WSResponse): Future[Unit] = {
-    if (response.status == Status.NO_CONTENT) {
+  private def status(statusCode: Int, response: WSResponse): Future[Unit] = {
+    if (response.status == statusCode) {
       Future.successful(Unit)
     } else {
-      Future.failed(new IllegalStateException(response.body))
+      Future.failed(GitHub.IncorrectResponseStatus(statusCode, response.status, response.body))
     }
   }
 
@@ -664,6 +642,14 @@ object GitHub {
         s"Could not find a GitHub user for $name on commit $sha"
       }
     }
+  }
+
+  case class IncorrectResponseStatus(expectedStatusCode: Int, actualStatusCode: Int, responseBody: String) extends Exception {
+    override def getMessage: String = s"Expected status code $expectedStatusCode but got $actualStatusCode"
+  }
+
+  case class InvalidResponseBody(body: String) extends Exception {
+    override def getMessage: String = "Response body was not in the expected form"
   }
 
 }

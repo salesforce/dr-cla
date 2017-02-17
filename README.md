@@ -32,10 +32,13 @@ Local Dev Setup
 1. Setup a GitHub Integration testing user.
 1. Setup a new Integration in your Integration testing user's account at https://github.com/settings/integrations with the following settings:
     - *Webhook URL* = `https://YOUR_NGROK_ID.ngrok.io/webhook-integration`
+    - *Repository administration* = `Read-only`
     - *Commit statuses* = `Read & Write`
-    - *Issue comment* = `Read & Write`
     - *Issues* = `Read & Write`
     - *Pull request* = `Read & Write`
+    - Select *Pull request*
+    - *Repository contents* = `Read-only`
+    - *Organization members* = `Read-only`
 
     It is not required, but if you set the GitHub Integration Secret Token, then set the `GITHUB_INTEGRATION_SECRET_TOKEN` env var accordingly.
 
@@ -73,9 +76,13 @@ Run the Tests
 
 1. You will need two additional GitHub testing users.  For each, create a personal access token at https://github.com/settings/tokens with the following permissions: `admin:org, admin:org_hook, admin:public_key, admin:repo_hook, delete_repo, repo, user`
 
-1. For one user, create a new testing organization (because this can't be done via the API).
+1. For user one, create a new testing organization (because this can't be done via the API).  Add the integration user as a member of this org.
 
-1. Set the `GITHUB_TEST_TOKEN1`, `GITHUB_TEST_ORG1`, and `GITHUB_TEST_TOKEN2` environment variables.
+1. For user one, create second new testing organization.  Add the second user as a private member of this org.  Install your integration into this org.
+
+1. For user one, install the integration.
+
+1. Set the `GITHUB_TEST_TOKEN1`, `GITHUB_TEST_ORG1`, `GITHUB_TEST_ORG2`, and `GITHUB_TEST_TOKEN2` environment variables.
 
 1. Run all of the tests continuously:
 

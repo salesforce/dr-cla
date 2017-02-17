@@ -21,7 +21,7 @@ case class CreateClaSignature(claSignature: ClaSignature) extends Statement {
   override val values = Seq(claSignature.contact.gitHubId, claSignature.signedOn, claSignature.claVersion)
 }
 
-case class GetClaSignatures(gitHubIds: Set[String]) extends Query[Seq[ClaSignature]] {
+case class GetClaSignatures(gitHubIds: Set[String]) extends Query[Set[ClaSignature]] {
   override def sql =
     s"""
        |SELECT *, sf_cla__cla_signature__c.id AS cla_id
@@ -30,5 +30,5 @@ case class GetClaSignatures(gitHubIds: Set[String]) extends Query[Seq[ClaSignatu
        |WHERE sf_cla__contact__r__sf_cla__github_id__c = ANY(?)
      """.stripMargin
   override val values = Seq(gitHubIds)
-  override def reduce(rows: Iterator[Row]): Seq[ClaSignature] = rows.map(ClaSignature.rowToClaSignature).toSeq
+  override def reduce(rows: Iterator[Row]): Set[ClaSignature] = rows.map(ClaSignature.rowToClaSignature).toSet
 }
