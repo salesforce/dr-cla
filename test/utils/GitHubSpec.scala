@@ -338,7 +338,7 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
   "GitHub.applyLabel" must {
     "apply a label to issue" in {
       val appliedLabels = await(gitHub.applyLabel(testExternalPullRequestOwnerRepo, "foobar", testExternalPullRequestNum, testToken1))
-      (appliedLabels.head.get \ "name").as[String] must equal ("foobar")
+      appliedLabels.value.map(_.\("name").as[String]) must contain ("foobar")
     }
 
     "work with non-existant labels" in {
