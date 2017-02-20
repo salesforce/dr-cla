@@ -401,8 +401,10 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
     ws(s"repos/$ownerRepo/forks", accessToken).post(EmptyContent()).flatMap(statusT[JsObject](Status.ACCEPTED, _))
   }
 
-  def getFile(ownerRepo: String, path: String, accessToken: String): Future[JsObject] = {
-    ws(s"repos/$ownerRepo/contents/$path", accessToken).get().flatMap(okT[JsObject])
+  def getFile(ownerRepo: String, path: String, maybeRef: Option[String] = None)(accessToken: String): Future[JsObject] = {
+    val queryString = maybeRef.fold(Map.empty[String, String])(ref => Map("ref" -> ref)).toSeq
+
+    ws(s"repos/$ownerRepo/contents/$path", accessToken).withQueryString(queryString:_*).get().flatMap(okT[JsObject])
   }
 
   def editFile(ownerRepo: String, path: String, contents: String, commitMessage: String, sha: String, maybeBranch: Option[String] = None)(accessToken: String): Future[JsObject] = {

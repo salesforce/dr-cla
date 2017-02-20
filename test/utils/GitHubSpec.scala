@@ -77,6 +77,16 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
     }
   }
 
+  @tailrec
+  private def waitForFileToBeReady(ownerRepo: String, path: String, sha: String, accessToken: String): Unit = {
+    val file = Try(await(gitHub.getFile(ownerRepo, path, Some(sha))(accessToken)))
+
+    if (file.isFailure) {
+      Thread.sleep(1000)
+      waitForFileToBeReady(ownerRepo, path, sha, accessToken)
+    }
+  }
+
   private def createRepo(): String = {
     val repoName = Random.alphanumeric.take(8).mkString
     val createRepoResult = await(gitHub.createRepo(repoName, None, true)(testToken1))
@@ -127,13 +137,19 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
     // make sure testToken2 does not have access to the upstream repo
     testRepos2.value.find(_.\("full_name").asOpt[String].contains(testRepo1)) must be (None)
 
-    val readme = await(gitHub.getFile(testFork, "README.md", testToken2))
+    val readme = await(gitHub.getFile(testFork, "README.md")(testToken2))
 
     val maybeReadmeSha = (readme \ "sha").asOpt[String]
 
     maybeReadmeSha must be ('defined)
 
     val readmeSha = maybeReadmeSha.get
+
+    val commits = await(gitHub.repoCommits(testFork, testToken1))
+
+    val sha = (commits.value.head \ "sha").as[String]
+
+    waitForFileToBeReady(testFork, "README.md", sha, testToken2)
 
     val newContents = Random.alphanumeric.take(32).mkString
 
@@ -151,11 +167,13 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
   lazy val testInternalPullRequest = {
     val newContents = Random.alphanumeric.take(32).mkString
 
-    val readmeSha = (await(gitHub.getFile(testRepo1, "README.md", testToken1)) \ "sha").as[String]
+    val readmeSha = (await(gitHub.getFile(testRepo1, "README.md")(testToken1)) \ "sha").as[String]
 
     val commits = await(gitHub.repoCommits(testRepo1, testToken1))
 
     val sha = (commits.value.head \ "sha").as[String]
+
+    waitForFileToBeReady(testRepo1, "README.md", sha, testToken2)
 
     val newBranch = await(gitHub.createBranch(testRepo1, "testing", sha, testToken1))
 
