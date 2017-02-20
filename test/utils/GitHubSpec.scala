@@ -486,7 +486,7 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
 
       val validationResults = await(validationResultsFuture)
       validationResults.size must equal (1)
-      (validationResults.head \ "creator" \ "login").as[String].startsWith(integrationLogin) must be (true)
+      (validationResults.head \ "creator" \ "login").as[String].endsWith("[bot]") must be (true)
       (validationResults.head \ "state").as[String] must equal ("success")
     }
     "work with integrations for pull requests with external contributors" in {
@@ -498,7 +498,7 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
 
       val validationResults = await(validationResultsFuture)
       validationResults.size must equal (1)
-      (validationResults.head \ "creator" \ "login").as[String].startsWith(integrationLogin) must be (true)
+      (validationResults.head \ "creator" \ "login").as[String].endsWith("[bot]") must be (true)
       (validationResults.head \ "state").as[String] must equal ("failure")
     }
     "not comment on a pull request when the external contributors have signed the CLA" in {
@@ -519,18 +519,20 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
       await(gitHub.validatePullRequests(pullRequestsViaIntegration, "http://asdf.com/")(_ => Future.successful(Set.empty[ClaSignature])))
 
       val issueComments = await(gitHub.issueComments(testExternalPullRequestOwnerRepo, testExternalPullRequestNum, testToken1))
-      issueComments.value.count(_.\("user").\("login").as[String].startsWith(integrationLogin)) must equal (1)
+      issueComments.value.count(_.\("user").\("login").as[String].endsWith("[bot]")) must equal (1)
     }
   }
 
   "we" must {
     "cleanup" in {
-      await(gitHub.deleteRepo(testFork)(testToken2))
-      await(gitHub.deleteRepo(testRepo1)(testToken1))
-      await(gitHub.deleteRepo(testRepo2)(testToken1))
-      await(gitHub.deleteRepo(testRepo3)(testToken1))
-      await(gitHub.deleteRepo(testOrg1Repo)(testToken1))
-      await(gitHub.deleteRepo(testOrg2Repo)(testToken1))
+      if (sys.env.get("DO_NOT_CLEANUP").isEmpty) {
+        await(gitHub.deleteRepo(testFork)(testToken2))
+        await(gitHub.deleteRepo(testRepo1)(testToken1))
+        await(gitHub.deleteRepo(testRepo2)(testToken1))
+        await(gitHub.deleteRepo(testRepo3)(testToken1))
+        await(gitHub.deleteRepo(testOrg1Repo)(testToken1))
+        await(gitHub.deleteRepo(testOrg2Repo)(testToken1))
+      }
     }
   }
 
