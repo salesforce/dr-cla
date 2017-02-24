@@ -1,8 +1,11 @@
+import de.heikoseeberger.sbtheader.HeaderPattern
+import de.heikoseeberger.sbtheader.license.BSD3Clause
+
+lazy val root = (project in file(".")).enablePlugins(PlayScala, ForcePlugin, AutomateHeaderPlugin)
+
 name := "salesforce-cla"
 
 version := "1.0-SNAPSHOT"
-
-lazy val root = (project in file(".")).enablePlugins(PlayScala, ForcePlugin)
 
 scalaVersion := "2.11.8"
 
@@ -38,3 +41,15 @@ username in Force := sys.env.getOrElse("SALESFORCE_USERNAME", "")
 password in Force := sys.env.getOrElse("SALESFORCE_PASSWORD", "")
 
 packagedComponents in Force := Seq("sf_cla")
+
+headers := Map(
+  "scala" -> BSD3Clause("2017", "salesforce.com, inc."),
+  "conf" -> BSD3Clause("2017", "salesforce.com, inc.", "#"),
+  "html" -> BSD3Clause("2017", "salesforce.com, inc.", "@*")
+)
+
+excludes := Seq(
+  "conf/clas/**"
+)
+
+unmanagedSources.in(Compile, createHeaders) ++= sources.in(Compile, TwirlKeys.compileTemplates).value
