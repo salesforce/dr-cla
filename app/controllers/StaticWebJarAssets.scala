@@ -45,7 +45,11 @@ class StaticWebJarAssets @Inject() (webJarAssets: WebJarAssets, configuration: C
   }
 
   def locateUrl(path: String): String = {
-    url(webJarAssets.locate(path))
+    url(locate(path))
+  }
+
+  def locate(path: String): String = {
+    webJarAssets.locate(path)
   }
 
 }
