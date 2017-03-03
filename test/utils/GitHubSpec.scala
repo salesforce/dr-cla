@@ -207,6 +207,8 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
 
     val newBranch = await(gitHub.createBranch(testRepo1, "testing", sha, testToken1))
 
+    waitForFileToBeReady(testRepo1, "README.md", "testing", testToken1)
+
     val internalEditResult = await(gitHub.editFile(testRepo1, "README.md", newContents, "Updated", readmeSha, Some("testing"))(testToken1))
     (internalEditResult \ "commit").asOpt[JsObject] must be ('defined)
 

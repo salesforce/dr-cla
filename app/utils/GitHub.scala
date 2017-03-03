@@ -49,6 +49,7 @@ import play.api.mvc.Results.EmptyContent
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.language.implicitConversions
+import scala.util.Try
 
 class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec: ExecutionContext) {
 
@@ -640,7 +641,8 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
         Future.failed[T](GitHub.InvalidResponseBody(response.body))
       } (Future.successful)
     } else {
-      Future.failed(GitHub.IncorrectResponseStatus(statusCode, response.status, response.body))
+      val messageTry = Try((response.json \ "message").as[String])
+      Future.failed(GitHub.IncorrectResponseStatus(statusCode, response.status, messageTry.getOrElse(response.body)))
     }
   }
 
@@ -648,7 +650,8 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
     if (response.status == statusCode) {
       Future.successful(Unit)
     } else {
-      Future.failed(GitHub.IncorrectResponseStatus(statusCode, response.status, response.body))
+      val messageTry = Try((response.json \ "message").as[String])
+      Future.failed(GitHub.IncorrectResponseStatus(statusCode, response.status, messageTry.getOrElse(response.body)))
     }
   }
 
@@ -685,8 +688,8 @@ object GitHub {
     }
   }
 
-  case class IncorrectResponseStatus(expectedStatusCode: Int, actualStatusCode: Int, responseBody: String) extends Exception {
-    override def getMessage: String = s"Expected status code $expectedStatusCode but got $actualStatusCode"
+  case class IncorrectResponseStatus(expectedStatusCode: Int, actualStatusCode: Int, message: String) extends Exception {
+    override def getMessage: String = s"Expected status code $expectedStatusCode but got $actualStatusCode - $message"
   }
 
   case class InvalidResponseBody(body: String) extends Exception {
