@@ -524,6 +524,7 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
     }
   }
 
+  // note that ordering is important here because we validate the same PR multiple times
   "GitHub.validatePullRequests" must {
     "work with integrations for pull requests with only internal contributors" in {
       val pullRequestsViaIntegration = Map(testInternalPullRequest -> testIntegrationToken1)
@@ -536,6 +537,29 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
       validationResults.size must equal (1)
       (validationResults.head \ "creator" \ "login").as[String].endsWith("[bot]") must be (true)
       (validationResults.head \ "state").as[String] must equal ("success")
+
+      val labels = await(gitHub.getIssueLabels(testInternalPullRequestOwnerRepo, testInternalPullRequestNum, testIntegrationToken1))
+      labels.value must be ('empty)
+
+      val issueComments = await(gitHub.issueComments(testInternalPullRequestOwnerRepo, testInternalPullRequestNum, testIntegrationToken1))
+      issueComments.value must be ('empty)
+    }
+    "not comment on a pull request when the external contributors have signed the CLA" in {
+      val pullRequestsViaIntegration = Map(testExternalPullRequest -> testIntegrationToken1)
+
+      val validationResultsFuture = gitHub.validatePullRequests(pullRequestsViaIntegration, "http://asdf.com/") { _ =>
+        Future.successful(Set(ClaSignature(1, Contact(1, "Jon", "Doe", "jdoe@foo.com", testLogin2), new LocalDateTime(), "1.0")))
+      }
+
+      val validationResults = await(validationResultsFuture)
+      validationResults.size must equal (1)
+      (validationResults.head \ "state").as[String] must equal ("success")
+
+      val labels = await(gitHub.getIssueLabels(testExternalPullRequestOwnerRepo, testExternalPullRequestNum, testIntegrationToken1))
+      labels.value.exists(_.\("name").as[String] == "cla:signed") must be (true)
+
+      val issueComments = await(gitHub.issueComments(testExternalPullRequestOwnerRepo, testExternalPullRequestNum, testIntegrationToken1))
+      issueComments.value.count(_.\("user").\("login").as[String].endsWith("[bot]")) must equal (0)
     }
     "work with integrations for pull requests with external contributors" in {
       val pullRequestsViaIntegration = Map(testExternalPullRequest -> testIntegrationToken1)
@@ -548,17 +572,12 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
       validationResults.size must equal (1)
       (validationResults.head \ "creator" \ "login").as[String].endsWith("[bot]") must be (true)
       (validationResults.head \ "state").as[String] must equal ("failure")
-    }
-    "not comment on a pull request when the external contributors have signed the CLA" in {
-      val pullRequestsViaIntegration = Map(testExternalPullRequest -> testIntegrationToken1)
 
-      val validationResultsFuture = gitHub.validatePullRequests(pullRequestsViaIntegration, "http://asdf.com/") { _ =>
-        Future.successful(Set(ClaSignature(1, Contact(1, "Jon", "Doe", "jdoe@foo.com", testLogin2), new LocalDateTime(), "1.0")))
-      }
+      val labels = await(gitHub.getIssueLabels(testExternalPullRequestOwnerRepo, testExternalPullRequestNum, testIntegrationToken1))
+      labels.value.exists(_.\("name").as[String] == "cla:missing") must be (true)
 
-      val validationResults = await(validationResultsFuture)
-      validationResults.size must equal (1)
-      (validationResults.head \ "state").as[String] must equal ("success")
+      val issueComments = await(gitHub.issueComments(testExternalPullRequestOwnerRepo, testExternalPullRequestNum, testIntegrationToken1))
+      issueComments.value.count(_.\("user").\("login").as[String].endsWith("[bot]")) must equal (1)
     }
     "not comment twice on the same pull request" in {
       val pullRequestsViaIntegration = Map(testExternalPullRequest -> testIntegrationToken1)

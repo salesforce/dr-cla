@@ -556,9 +556,8 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
     } yield pullRequestCommitters.diff(collaborators)
   }
 
-  def committersWithoutClas(ownerRepo: String, prNumber: Int, sha: String, accessToken: String)(clasForCommitters: (Set[String]) => Future[Set[ClaSignature]]): Future[Set[String]] = {
+  def committersWithoutClas(ownerRepo: String, prNumber: Int, sha: String, accessToken: String)(externalContributors: Set[String])(clasForCommitters: (Set[String]) => Future[Set[ClaSignature]]): Future[Set[String]] = {
     for {
-      externalContributors <- externalContributors(ownerRepo, prNumber, sha, accessToken)
       clasForCommitters <- clasForCommitters(externalContributors)
     } yield {
       // todo: maybe check latest CLA version
@@ -567,30 +566,37 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
   }
 
   def missingClaComment(ownerRepo: String, prNumber: Int, sha: String, claUrl: String, committersWithoutClas: Set[String], accessToken: String): Future[Either[JsValue, Unit]] = {
-    integrationLoginFuture.flatMap { integrationLogin =>
-      issueComments(ownerRepo, prNumber, accessToken).flatMap { comments =>
-        val alreadyCommented = comments.value.exists(_.\("user").\("login").as[String].startsWith(integrationLogin))
-        if (!alreadyCommented) {
-          val body = s"Thanks for the contribution!  Before we can merge this, we need ${committersWithoutClas.map(" @" + _).mkString} to [sign the Salesforce Contributor License Agreement]($claUrl)."
-          commentOnIssue(ownerRepo, prNumber, body, accessToken).map(Left(_))
-        }
-        else {
-          Future.successful(Right(Unit))
+    if (committersWithoutClas.nonEmpty) {
+      integrationLoginFuture.flatMap { integrationLogin =>
+        issueComments(ownerRepo, prNumber, accessToken).flatMap { comments =>
+          val alreadyCommented = comments.value.exists(_.\("user").\("login").as[String].startsWith(integrationLogin))
+          if (!alreadyCommented) {
+            val body = s"Thanks for the contribution!  Before we can merge this, we need ${committersWithoutClas.map(" @" + _).mkString} to [sign the Salesforce Contributor License Agreement]($claUrl)."
+            commentOnIssue(ownerRepo, prNumber, body, accessToken).map(Left(_))
+          }
+          else {
+            Future.successful(Right(Unit))
+          }
         }
       }
     }
+    else {
+      Future.successful(Right(Unit))
+    }
   }
 
-  def updatePullRequestStatus(ownerRepo: String, prNumber: Int, sha: String, claUrl: String, committersWithoutClas: Set[String], accessToken: String): Future[JsObject] = {
-
-    val (state, description, toggleLabelFuture) = if (committersWithoutClas.isEmpty) {
-      ("success", "All contributors have signed the CLA", toggleLabel(ownerRepo, "cla:signed", "cla:missing", prNumber, accessToken))
+  def updatePullRequestLabel(ownerRepo: String, prNumber: Int, hasExternalContributors: Boolean, hasMissingClas: Boolean, accessToken: String): Future[JsValue] = {
+    if (hasExternalContributors) {
+      if (hasMissingClas) {
+        toggleLabel(ownerRepo, "cla:missing", "cla:signed", prNumber, accessToken)
+      }
+      else {
+        toggleLabel(ownerRepo, "cla:signed", "cla:missing", prNumber, accessToken)
+      }
     }
     else {
-      ("failure", "One or more contributors need to sign the CLA", toggleLabel(ownerRepo, "cla:missing", "cla:signed", prNumber, accessToken))
+      Future.successful(Json.obj())
     }
-
-    createStatus(ownerRepo, sha, state, claUrl, description, "salesforce-cla", accessToken)
   }
 
   def validatePullRequests(pullRequests: Map[JsObject, String], claUrl: String)(clasForCommitters: (Set[String]) => Future[Set[ClaSignature]]): Future[Iterable[JsObject]] = {
@@ -602,9 +608,12 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
 
         val pullRequestStatusFuture = for {
           _ <- createStatus(ownerRepo, sha, "pending", claUrl, "The CLA verifier is running", "salesforce-cla", token)
-          committersWithoutClas <- committersWithoutClas(ownerRepo, prNumber, sha, token)(clasForCommitters)
+          externalContributors <- externalContributors(ownerRepo, prNumber, sha, token)
+          committersWithoutClas <- committersWithoutClas(ownerRepo, prNumber, sha, token)(externalContributors)(clasForCommitters)
           _ <- missingClaComment(ownerRepo, prNumber, sha, claUrl, committersWithoutClas, token)
-          pullRequestStatus <- updatePullRequestStatus(ownerRepo, prNumber, sha, claUrl, committersWithoutClas, token)
+          _ <- updatePullRequestLabel(ownerRepo, prNumber, externalContributors.nonEmpty, committersWithoutClas.nonEmpty, token)
+          (state, description) = if (committersWithoutClas.isEmpty) ("success", "All contributors have signed the CLA") else ("failure", "One or more contributors need to sign the CLA")
+          pullRequestStatus <- createStatus(ownerRepo, sha, state, claUrl, description, "salesforce-cla", token)
         } yield pullRequestStatus
 
         pullRequestStatusFuture.recoverWith {
