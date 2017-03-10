@@ -254,12 +254,13 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
     val accessToken = crypto.decryptAES(encAccessToken)
 
     val repoCommitsFuture = gitHub.repoCommits(ownerRepo, accessToken)
+    val internalContributorsFuture = gitHub.internalContributors(ownerRepo, accessToken)
 
     for {
-      internalContributors <- gitHub.internalContributors(ownerRepo, accessToken)
+      internalContributors <- internalContributorsFuture
       repoCommits <- repoCommitsFuture
       authors = repoCommits.value.map(gitHub.commitAuthor).distinct.toSet
-      externalContributors = authors.diff(internalContributors)
+      externalContributors = gitHub.externalContributors(authors, internalContributors)
       clasForExternalContributors <- db.query(GetClaSignatures(externalContributors))
     } yield {
 

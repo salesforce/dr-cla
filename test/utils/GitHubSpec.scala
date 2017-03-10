@@ -521,7 +521,7 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
 
   "GitHub.externalContributors" must {
     "not include repo collaborators" in {
-      val externalContributors = await(gitHub.externalContributors(testInternalPullRequestOwnerRepo, testInternalPullRequestNum, testInternalPullRequestSha, testIntegrationToken1))
+      val externalContributors = await(gitHub.externalContributorsForPullRequest(testInternalPullRequestOwnerRepo, testInternalPullRequestNum, testInternalPullRequestSha, testIntegrationToken1))
       externalContributors must be ('empty)
     }
   }

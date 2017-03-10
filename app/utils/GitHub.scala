@@ -552,17 +552,21 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
     collaborators(ownerRepo, accessToken).map(_.value.map(_.\("login").as[String]).toSet)
   }
 
-  def externalContributors(ownerRepo: String, prNumber: Int, sha: String, accessToken: String): Future[Set[String]] = {
+  def externalContributors(contributors: Set[String], internalContributors: Set[String]): Set[String] = {
+    contributors.diff(internalContributors)
+  }
+
+  def externalContributorsForPullRequest(ownerRepo: String, prNumber: Int, sha: String, accessToken: String): Future[Set[String]] = {
     val pullRequestCommittersFuture = pullRequestCommitters(ownerRepo, prNumber, sha, accessToken)
     val internalContributorsFuture = internalContributors(ownerRepo, accessToken)
 
     for {
       pullRequestCommitters <- pullRequestCommittersFuture
       internalContributors <- internalContributorsFuture
-    } yield pullRequestCommitters.diff(internalContributors)
+    } yield externalContributors(pullRequestCommitters, internalContributors)
   }
 
-  def committersWithoutClas(ownerRepo: String, prNumber: Int, sha: String, accessToken: String)(externalContributors: Set[String])(clasForCommitters: (Set[String]) => Future[Set[ClaSignature]]): Future[Set[String]] = {
+  def committersWithoutClas(externalContributors: Set[String])(clasForCommitters: (Set[String]) => Future[Set[ClaSignature]]): Future[Set[String]] = {
     for {
       clasForCommitters <- clasForCommitters(externalContributors)
     } yield {
@@ -614,8 +618,8 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
 
         val pullRequestStatusFuture = for {
           _ <- createStatus(ownerRepo, sha, "pending", claUrl, "The CLA verifier is running", "salesforce-cla", token)
-          externalContributors <- externalContributors(ownerRepo, prNumber, sha, token)
-          committersWithoutClas <- committersWithoutClas(ownerRepo, prNumber, sha, token)(externalContributors)(clasForCommitters)
+          externalContributors <- externalContributorsForPullRequest(ownerRepo, prNumber, sha, token)
+          committersWithoutClas <- committersWithoutClas(externalContributors)(clasForCommitters)
           _ <- missingClaComment(ownerRepo, prNumber, sha, claUrl, committersWithoutClas, token)
           _ <- updatePullRequestLabel(ownerRepo, prNumber, externalContributors.nonEmpty, committersWithoutClas.nonEmpty, token)
           (state, description) = if (committersWithoutClas.isEmpty) ("success", "All contributors have signed the CLA") else ("failure", "One or more contributors need to sign the CLA")
