@@ -252,7 +252,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
   def collaborators(ownerRepo: String, accessToken: String): Future[JsArray] = {
     val path = s"repos/$ownerRepo/collaborators"
 
-    ws(path, accessToken).get().flatMap(okT[JsArray])
+    fetchPages(path, accessToken)
   }
 
   def commentOnIssue(ownerRepo: String, issueNumber: Int, body: String, accessToken: String): Future[JsValue] = {
@@ -548,22 +548,38 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
     }
   }
 
-  def internalContributors(ownerRepo: String, accessToken: String): Future[Set[String]] = {
-    collaborators(ownerRepo, accessToken).map(_.value.map(_.\("login").as[String]).toSet)
+  def repoContributors(ownerRepo: String, accessToken: String): Future[JsArray] = {
+    val path = s"repos/$ownerRepo/contributors"
+
+    ws(path, accessToken).get().flatMap(okT[JsArray])
   }
 
   def externalContributors(contributors: Set[String], internalContributors: Set[String]): Set[String] = {
     contributors.diff(internalContributors)
   }
 
+  def logins(users: JsArray): Set[String] = {
+    users.value.map(_.\("login").as[String]).toSet
+  }
+
+  def contributorLoginsAndContributions(contributors: JsArray): Map[String, Int] = {
+    val loginAndCount = contributors.value.map { contributor =>
+      val login = contributor.\("login").as[String]
+      val count = contributor.\("contributions").as[Int]
+      (login, count)
+    }
+
+    loginAndCount.toMap
+  }
+
   def externalContributorsForPullRequest(ownerRepo: String, prNumber: Int, sha: String, accessToken: String): Future[Set[String]] = {
     val pullRequestCommittersFuture = pullRequestCommitters(ownerRepo, prNumber, sha, accessToken)
-    val internalContributorsFuture = internalContributors(ownerRepo, accessToken)
+    val collaboratorsFuture = collaborators(ownerRepo, accessToken)
 
     for {
       pullRequestCommitters <- pullRequestCommittersFuture
-      internalContributors <- internalContributorsFuture
-    } yield externalContributors(pullRequestCommitters, internalContributors)
+      collaborators <- collaboratorsFuture
+    } yield externalContributors(pullRequestCommitters, logins(collaborators))
   }
 
   def committersWithoutClas(externalContributors: Set[String])(clasForCommitters: (Set[String]) => Future[Set[ClaSignature]]): Future[Set[String]] = {

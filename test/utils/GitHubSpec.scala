@@ -599,6 +599,13 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
     }
   }
 
+  // todo
+  "repoContributors" should {
+    "worl" in {
+      cancel
+    }
+  }
+
   "we" must {
     "cleanup" in {
       if (sys.env.get("DO_NOT_CLEANUP").isEmpty) {

@@ -253,31 +253,30 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
   def auditContributors(org: String, ownerRepo: String, encAccessToken: String) = Action.async { implicit request =>
     val accessToken = crypto.decryptAES(encAccessToken)
 
-    val repoCommitsFuture = gitHub.repoCommits(ownerRepo, accessToken)
-    val internalContributorsFuture = gitHub.internalContributors(ownerRepo, accessToken)
+    val collaboratorsFuture = gitHub.collaborators(ownerRepo, accessToken)
+    val allContributorsFuture = gitHub.repoContributors(ownerRepo, accessToken)
 
     for {
-      internalContributors <- internalContributorsFuture
-      repoCommits <- repoCommitsFuture
-      authors = repoCommits.value.map(gitHub.commitAuthor).distinct.toSet
-      externalContributors = gitHub.externalContributors(authors, internalContributors)
+      collaborators <- collaboratorsFuture.map(gitHub.logins)
+      allContributors <- allContributorsFuture.map(gitHub.contributorLoginsAndContributions)
+      externalContributors = gitHub.externalContributors(allContributors.keySet, collaborators)
       clasForExternalContributors <- db.query(GetClaSignatures(externalContributors))
     } yield {
 
       val externalContributorsDetails = externalContributors.map { gitHubId =>
         val maybeClaSignature = clasForExternalContributors.find(_.contact.gitHubId == gitHubId)
-        val commits = repoCommits.value.filter(gitHub.commitAuthor(_) == gitHubId)
+        val commits = allContributors.getOrElse(gitHubId, 0)
         gitHubId -> (maybeClaSignature, commits)
       }.toMap
 
-      val internalContributorsDetails = internalContributors.map { gitHubId =>
-        val commits = repoCommits.value.filter(gitHub.commitAuthor(_) == gitHubId)
-        gitHubId -> commits
-      }.toMap.filter { case (_, commits) =>
-        commits.nonEmpty
-      }
+      val internalContributorsWithCommits = collaborators.flatMap { login =>
+        val maybeContributions = allContributors.get(login)
+        maybeContributions.fold(Set.empty[(String, Int)]) { contributions =>
+          Set(login -> contributions)
+        }
+      }.toMap
 
-      Ok(views.html.auditRepo(externalContributorsDetails, internalContributorsDetails))
+      Ok(views.html.auditRepo(externalContributorsDetails, internalContributorsWithCommits))
     }
   }
 

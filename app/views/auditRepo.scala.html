@@ -28,14 +28,14 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *@
 
-@(externalContributors: Map[String, (Option[ClaSignature], Seq[play.api.libs.json.JsValue])], internalContributors: Map[String, Seq[play.api.libs.json.JsValue]])
+@(externalContributors: Map[String, (Option[ClaSignature], Int)], internalContributors: Map[String, Int])
 
 @if(internalContributors.nonEmpty) {
     Internal Contributors:
     <ul class="slds-list--vertical slds-has-block-links" style="margin-left: 15px;">
         @internalContributors.map { case (gitHubId, commits) =>
             <li class="slds-list__item"><a href="https://github.com/@gitHubId" style="display: inline;">@gitHubId</a>
-            (@commits.length commits)</li>
+            (@commits commits)</li>
         }
     </ul>
 }
@@ -47,7 +47,7 @@
             <li class="slds-list__item" style="margin-top: 4px; margin-bottom: 4px;">
                 <a href="https://github.com/@gitHubId" style="display: inline;">@gitHubId</a>
 
-                (@commits.length commits)
+                (@commits commits)
 
                 @maybeClaSignature.fold {
                     <span class="slds-badge" style="background-color: #ff0000; color: #000000; font-weight: bold;">CLA has not been signed</span>
