@@ -28,30 +28,22 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *@
 
-@(encAccessToken: String, orgs: Seq[utils.GitHub.Org], systemUser: String)(implicit staticWebJarAssets: StaticWebJarAssets)
+@(orgs: Map[String, String], integrationSlug: String, oAuthClientId: String)(implicit staticWebJarAssets: StaticWebJarAssets)
 
 @main("CLA Audit") {
 
     <h2 class="slds-text-heading--large" style="margin-bottom: 20px;">CLA Audit</h2>
 
     <h2 class="slds-text-heading--medium" style="text-align: left; padding-left: 0.5rem;">Orgs You Can Audit:</h2>
-    @orgs.map { org =>
+    @orgs.map { case (org, encAccessToken) =>
         <ul class="slds-list--vertical slds-has-dividers">
             <li class="slds-list__item nohover">
                 <div class="slds-tile">
-                    <p class="slds-tile__title slds-truncate">GitHub Organization: <a href="https://github.com/@org.login">@org.login</a></p>
+                    <p class="slds-tile__title slds-truncate">GitHub Organization: <a href="https://github.com/@org">@org</a></p>
                     <div class="slds-tile__detail slds-text-body--small">
                         <ul class="slds-tile__detail slds-list--vertical slds-text-body--small">
                             <li class="slds-truncate slds-list__item nohover">
-                                <div data-href="@routes.Application.auditPrValidatorStatus(org.login, encAccessToken)">
-                                    <p>
-                                        Loading Pull Request Validator Status...
-                                        <img src="@staticWebJarAssets.locateUrl("assets/images/spinners/slds_spinner.gif")" alt="Loading..." style="height: 1rem; vertical-align: top;" />
-                                    </p>
-                                </div>
-                            </li>
-                            <li class="slds-truncate slds-list__item nohover">
-                                <div data-href="@routes.Application.auditRepos(org.login, encAccessToken)" data-autoload="false">
+                                <div data-href="@routes.Application.auditRepos(org, encAccessToken)" data-autoload="false">
                                     <button class="slds-button slds-button--brand">
                                         Load Repos
                                         <img src="@staticWebJarAssets.locateUrl("assets/images/spinners/slds_spinner.gif")" alt="Loading..." class="slds-button__icon slds-button__icon--right" style="height: 1rem; display: none;" />
@@ -65,7 +57,14 @@
         </ul>
     }
 
-    You and <code>@systemUser</code> must be org admins to see them here.  Email <a href="mailto:oss-cla@@salesforce.com">oss-cla@@salesforce.com</a> if you need help setting this up.
+    <div style="text-align: left; margin-left: 10px; margin-top: 10px;">
+        To see a GitHub Org here:
+        <ol class="slds-list--ordered">
+            <li><a href="https://github.com/integration/@integrationSlug">Install the Salesforce CLA Integration</a> into the org</li>
+            <li>Make sure you are an admin on the org</li>
+            <li>Make sure the <a href="https://github.com/settings/connections/applications/@oAuthClientId">Salesforce CLA application</a> has access to the org</li>
+        </ol>
+    </div>
 
     <script>
         // OMGJS!

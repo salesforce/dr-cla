@@ -240,56 +240,12 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
       maybeGitHubAuthInfo.fold {
         Future.successful(Redirect(gitHubAuthUrl(gitHubOauthScopesForAudit, routes.Application.audit().absoluteURL())))
       } { gitHubAuthInfo =>
-        val accessToken = crypto.decryptAES(gitHubAuthInfo.encAuthToken)
+        val userAccessToken = crypto.decryptAES(gitHubAuthInfo.encAuthToken)
 
-        val userAndIntegrationOrgsFuture = for {
-          // the user must be either a member or an admin
-          userOrgs <- gitHub.userMembershipOrgs(Some("active"), accessToken).map(orgsWithRole(Seq("admin")))
-          // the integration user must be an admin
-          integrationOrgs <- gitHub.userMembershipOrgs(Some("active"), gitHub.integrationToken).map(orgsWithRole(Seq("admin")))
-          systemUser <- gitHub.userInfo(gitHub.integrationToken).map(_.\("login").as[String])
-        } yield (userOrgs.intersect(integrationOrgs), systemUser)
-
-        userAndIntegrationOrgsFuture.map { case (orgs, systemUser) =>
-          Ok(views.html.audit(gitHubAuthInfo.encAuthToken, orgs, systemUser))
+        gitHub.integrationAndUserOrgs(userAccessToken).map { orgs =>
+          val orgsWithEncAccessToken = orgs.mapValues(crypto.encryptAES)
+          Ok(views.html.audit(orgsWithEncAccessToken, gitHub.integrationSlug, gitHub.clientId))
         }
-      }
-    }
-  }
-
-  private def orgsWithRole(roles: Seq[String])(jsArray: JsArray): Seq[GitHub.Org] = {
-    jsArray.value.filter(org => roles.contains(org.\("role").as[String])).map(_.as[GitHub.Org])
-  }
-
-  private def isOrgAdmin(org: String, accessToken: String): Future[Boolean] = {
-    gitHub.userMembershipOrgs(Some("active"), accessToken).map { jsArray =>
-      val orgs = orgsWithRole(Seq("admin"))(jsArray)
-      orgs.exists(_.login == org)
-    }
-  }
-
-  def auditPrValidatorStatus(org: String, encAccessToken: String) = Action.async { implicit request =>
-    val accessToken = crypto.decryptAES(encAccessToken)
-
-    isOrgAdmin(org, accessToken).flatMap { isOrgAdmin =>
-      if (isOrgAdmin) {
-        gitHub.userOrgMembership(org, accessToken).flatMap { orgInfo =>
-          val isAdmin = (orgInfo \ "role").as[String] == "admin"
-          gitHub.orgWebhooks(org, gitHub.integrationToken).map { webhooks =>
-            val webhookUrl = routes.Application.webhookPullRequest().absoluteURL()
-            val maybeWebhook = webhooks.value.find(_.\("config").\("url").as[String] == webhookUrl)
-            val maybeWebhookUrl = maybeWebhook.map { webhook =>
-              val id = (webhook \ "id").as[Int]
-              s"https://github.com/organizations/$org/settings/hooks/$id"
-            }
-            Ok(views.html.prValidatorStatus(org, maybeWebhookUrl, isAdmin, encAccessToken))
-          } recover {
-            case e: Exception => InternalServerError("Could not fetch the org's Webhooks")
-          }
-        }
-      }
-      else {
-        Future.successful(Unauthorized("You are not authorized to access this org"))
       }
     }
   }
@@ -297,13 +253,10 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
   def auditContributors(org: String, ownerRepo: String, encAccessToken: String) = Action.async { implicit request =>
     val accessToken = crypto.decryptAES(encAccessToken)
 
-    // maybe this should be repo collaborators instead?
-    val internalContributorsFuture = gitHub.orgMembers(org, accessToken)
-
     val repoCommitsFuture = gitHub.repoCommits(ownerRepo, accessToken)
 
     for {
-      internalContributors <- internalContributorsFuture.map(_.value.map(_.\("login").as[String]).distinct.toSet)
+      internalContributors <- gitHub.internalContributors(ownerRepo, accessToken)
       repoCommits <- repoCommitsFuture
       authors = repoCommits.value.map(gitHub.commitAuthor).distinct.toSet
       externalContributors = authors.diff(internalContributors)
@@ -333,30 +286,6 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
     gitHub.orgRepos(org, accessToken).map { jsArray =>
       val repos = jsArray.as[Seq[GitHub.Repo]]
       Ok(views.html.auditRepos(org, repos, encAccessToken))
-    }
-  }
-
-  def addPrValidatorWebhook() = Action.async(parse.urlFormEncoded) { implicit request =>
-    val maybeOrg = request.body.get("org").flatMap(_.headOption)
-    val maybeEncAccessToken = request.body.get("encAccessToken").flatMap(_.headOption)
-
-    (maybeOrg, maybeEncAccessToken) match {
-      case (Some(org), Some(encAccessToken)) =>
-        val accessToken = crypto.decryptAES(encAccessToken)
-
-        isOrgAdmin(org, accessToken).flatMap { isOrgAdmin =>
-          if (isOrgAdmin) {
-            val webhookUrl = routes.Application.webhookPullRequest().absoluteURL()
-            gitHub.addOrgWebhook(org, Seq("pull_request"), webhookUrl, "json", gitHub.integrationToken).map { _ =>
-              Redirect(routes.Application.audit())
-            }
-          }
-          else {
-            Future.successful(Unauthorized("You do not have admin or member access to this org"))
-          }
-        }
-      case _ =>
-        Future.successful(BadRequest("Required fields missing"))
     }
   }
 

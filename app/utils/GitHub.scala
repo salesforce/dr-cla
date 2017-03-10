@@ -59,6 +59,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
   lazy val integrationLoginFuture = userInfo(integrationToken).map(_.\("login").as[String])
 
   val integrationId = configuration.getString("github.integration.id").get
+  val integrationSlug = configuration.getString("github.integration.slug").get
 
   val integrationKeyPair: KeyPair = {
     val privateKeyString = configuration.getString("github.integration.private-key").get
@@ -547,14 +548,18 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
     }
   }
 
+  def internalContributors(ownerRepo: String, accessToken: String): Future[Set[String]] = {
+    collaborators(ownerRepo, accessToken).map(_.value.map(_.\("login").as[String]).toSet)
+  }
+
   def externalContributors(ownerRepo: String, prNumber: Int, sha: String, accessToken: String): Future[Set[String]] = {
     val pullRequestCommittersFuture = pullRequestCommitters(ownerRepo, prNumber, sha, accessToken)
-    val collaboratorsFuture = collaborators(ownerRepo, accessToken).map(_.value.map(_.\("login").as[String]).toSet)
+    val internalContributorsFuture = internalContributors(ownerRepo, accessToken)
 
     for {
       pullRequestCommitters <- pullRequestCommittersFuture
-      collaborators <- collaboratorsFuture
-    } yield pullRequestCommitters.diff(collaborators)
+      internalContributors <- internalContributorsFuture
+    } yield pullRequestCommitters.diff(internalContributors)
   }
 
   def committersWithoutClas(ownerRepo: String, prNumber: Int, sha: String, accessToken: String)(externalContributors: Set[String])(clasForCommitters: (Set[String]) => Future[Set[ClaSignature]]): Future[Set[String]] = {
@@ -625,6 +630,40 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
     }
   }
 
+  def orgsWithRole(roles: Seq[String])(jsArray: JsArray): Seq[GitHub.Org] = {
+    jsArray.value.filter(org => roles.contains(org.\("role").as[String])).map(_.as[GitHub.Org])
+  }
+
+  def isOrgAdmin(org: String, accessToken: String): Future[Boolean] = {
+    userMembershipOrgs(Some("active"), accessToken).map { jsArray =>
+      val orgs = orgsWithRole(Seq("admin"))(jsArray)
+      orgs.exists(_.login == org)
+    }
+  }
+
+  def integrationAndUserOrgs(userAccessToken: String): Future[Map[String, String]] = {
+    def orgIntegrationInstallationForUser(userOrgs: Seq[GitHub.Org])(integrationInstallation: JsValue): Boolean = {
+      val isOrg = (integrationInstallation \ "account" \ "type").as[String] == "Organization"
+      val userHasAccess = userOrgs.exists(_.login == (integrationInstallation \ "account" \ "login").as[String])
+      isOrg && userHasAccess
+    }
+
+    def orgWithAccessToken(integrationInstallation: JsValue): Future[(String, String)] = {
+      val org = (integrationInstallation \ "account" \ "login").as[String]
+      val integrationInstallationId = (integrationInstallation \ "id").as[Int]
+      installationAccessTokens(integrationInstallationId).map { json =>
+        (org, (json \ "token").as[String])
+      }
+    }
+
+    for {
+      userOrgs <- userMembershipOrgs(Some("active"), userAccessToken).map(orgsWithRole(Seq("admin")))
+      integrationInstallations <- integrationInstallations()
+      integrationInstallationsForUser = integrationInstallations.value.filter(orgIntegrationInstallationForUser(userOrgs))
+      integrationAccessTokens <- Future.sequence(integrationInstallationsForUser.map(orgWithAccessToken))
+    } yield integrationAccessTokens.toMap
+  }
+
   private def ok(response: WSResponse): Future[Unit] = status(Status.OK, response)
 
   private def okT[T](response: WSResponse)(implicit r: Reads[T]): Future[T] = statusT[T](Status.OK, response)
@@ -677,6 +716,7 @@ object GitHub {
 
   object Org {
     implicit val jsonReads: Reads[Org] = (__ \ "organization" \ "login").read[String].map(Org(_))
+    implicit val jsonWrites: Writes[Org] = Json.writes[Org]
   }
 
   case class AuthorLoginNotFound(sha: String, author: JsObject) extends Exception {
