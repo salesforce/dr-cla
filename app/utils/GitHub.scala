@@ -42,6 +42,7 @@ import org.bouncycastle.openssl.{PEMKeyPair, PEMParser}
 import pdi.jwt.{JwtAlgorithm, JwtClaim, JwtJson}
 import play.api.Configuration
 import play.api.http.{HeaderNames, MimeTypes, Status}
+import play.api.i18n.MessagesApi
 import play.api.libs.json.Reads._
 import play.api.libs.json._
 import play.api.libs.ws.{WSClient, WSRequest, WSResponse}
@@ -51,12 +52,10 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.language.implicitConversions
 import scala.util.Try
 
-class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec: ExecutionContext) {
+class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi: MessagesApi) (implicit ec: ExecutionContext) {
 
   val clientId = configuration.getString("github.oauth.client-id").get
   val clientSecret = configuration.getString("github.oauth.client-secret").get
-  val integrationToken = configuration.getString("github.token").get
-  lazy val integrationLoginFuture = userInfo(integrationToken).map(_.\("login").as[String])
 
   val integrationId = configuration.getString("github.integration.id").get
   val integrationSlug = configuration.getString("github.integration.slug").get
@@ -495,15 +494,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
     }.toMap
   }
 
-  def pullRequestsToBeValidatedViaDirectAccess(signerGitHubId: String, accessToken: String): Future[Map[JsObject, String]] = {
-    for {
-      repos <- allRepos(accessToken).map(_.value.map(_.as[JsObject]))
-      pullRequests <- pullRequestsNeedingValidationForAccessToken(signerGitHubId, repos, accessToken)
-    } yield pullRequests
-  }
-
-  def pullRequestsToBeValidatedViaIntegrations(signerGitHubId: String): Future[Map[JsObject, String]] = {
-
+  def pullRequestsToBeValidated(signerGitHubId: String): Future[Map[JsObject, String]] = {
     def integrationTokens(integrationInstallationIds: Seq[Int]): Future[Seq[String]] = {
       Future.sequence {
         integrationInstallationIds.map { integrationInstallationId =>
@@ -526,13 +517,6 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
       integrationAccessTokens <- integrationTokens(integrationInstallationIds)
       pullRequests <- Future.sequence(integrationAccessTokens.map(integrationAccessTokenToPullRequests))
     } yield pullRequests.flatten.toMap
-  }
-
-  def pullRequestsToBeValidated(signerGitHubId: String, accessToken: String): Future[Map[JsObject, String]] = {
-    for {
-      pullRequestsViaDirectAccess <- pullRequestsToBeValidatedViaDirectAccess(signerGitHubId, accessToken)
-      pullRequestsViaIntegrations <- pullRequestsToBeValidatedViaIntegrations(signerGitHubId)
-    } yield pullRequestsViaDirectAccess ++ pullRequestsViaIntegrations
   }
 
   def pullRequestCommitters(ownerRepo: String, prNumber: Int, sha: String, accessToken: String): Future[Set[String]] = {
@@ -593,16 +577,15 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient) (implicit ec
 
   def missingClaComment(ownerRepo: String, prNumber: Int, sha: String, claUrl: String, committersWithoutClas: Set[String], accessToken: String): Future[Either[JsValue, Unit]] = {
     if (committersWithoutClas.nonEmpty) {
-      integrationLoginFuture.flatMap { integrationLogin =>
-        issueComments(ownerRepo, prNumber, accessToken).flatMap { comments =>
-          val alreadyCommented = comments.value.exists(_.\("user").\("login").as[String].startsWith(integrationLogin))
-          if (!alreadyCommented) {
-            val body = s"Thanks for the contribution!  Before we can merge this, we need ${committersWithoutClas.map(" @" + _).mkString} to [sign the Salesforce Contributor License Agreement]($claUrl)."
-            commentOnIssue(ownerRepo, prNumber, body, accessToken).map(Left(_))
-          }
-          else {
-            Future.successful(Right(Unit))
-          }
+      issueComments(ownerRepo, prNumber, accessToken).flatMap { comments =>
+        val message = messagesApi("cla.missing", committersWithoutClas.map(" @" + _).mkString, claUrl)
+
+        val alreadyCommented = comments.value.exists(_.\("body").as[String] == message)
+        if (!alreadyCommented) {
+          commentOnIssue(ownerRepo, prNumber, message, accessToken).map(Left(_))
+        }
+        else {
+          Future.successful(Right(Unit))
         }
       }
     }

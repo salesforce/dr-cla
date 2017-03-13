@@ -37,10 +37,9 @@ import modules.Database
 import org.apache.commons.codec.digest.HmacUtils
 import org.joda.time.LocalDateTime
 import play.api.{Configuration, Environment, Logger}
-import play.api.libs.json.{JsArray, JsObject, JsValue, Json}
+import play.api.libs.json.{JsObject, JsValue}
 import play.api.mvc.Results.EmptyContent
 import play.api.mvc._
-import utils.GitHub.AuthorLoginNotFound
 import utils.{Crypto, GitHub}
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -126,7 +125,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
           claSignaturesCreated <- db.execute(CreateClaSignature(claSignature))
           if claSignaturesCreated == 1
         } yield {
-          revalidatePullRequests(claSignature.contact.gitHubId, gitHub.integrationToken).onFailure {
+          revalidatePullRequests(claSignature.contact.gitHubId).onFailure {
             case e: Exception => Logger.error("Could not revalidate PRs", e)
           }
           Redirect(routes.Application.signedCla())
@@ -162,20 +161,6 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
         case _ =>
           Future.successful(Iterable.empty[JsObject])
       }
-    }
-  }
-
-  def webhookPullRequest = Action.async(parse.json) { implicit request =>
-    handlePullRequest(request.body, gitHub.integrationToken).map(_ => Ok).recover {
-      case e: NoPullRequest =>
-        (request.body \ "zen").asOpt[String].fold {
-          BadRequest("Was this a test?  If so, where is your zen?")
-        } { zen =>
-          Ok(zen)
-        }
-      case e: Exception =>
-        Logger.error("Error handling pull request", e)
-        InternalServerError(e.getMessage)
     }
   }
 
@@ -312,9 +297,9 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
 
   // When someone signs the CLA we don't know what PR we need to update.
   // So get all the PRs we have access to, that have the contributor which just signed the CLA and where the status is failed.
-  private def revalidatePullRequests(signerGitHubId: String, token: String)(implicit request: RequestHeader): Future[Iterable[JsObject]] = {
+  private def revalidatePullRequests(signerGitHubId: String)(implicit request: RequestHeader): Future[Iterable[JsObject]] = {
     for {
-      pullRequestsToBeValidated <- gitHub.pullRequestsToBeValidated(signerGitHubId, token)
+      pullRequestsToBeValidated <- gitHub.pullRequestsToBeValidated(signerGitHubId)
       validation <- validatePullRequests(pullRequestsToBeValidated)
     } yield validation
   }

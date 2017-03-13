@@ -7,9 +7,7 @@ POST        /sign-cla                        controllers.Application.submitCla
 
 GET         /signed-cla                      controllers.Application.signedCla
 
-POST        /webhook-pullrequest             controllers.Application.webhookPullRequest
 POST        /webhook-integration             controllers.Application.webhookIntegration
-
 
 GET         /audit                           controllers.Application.audit
 GET         /audit/repos                     controllers.Application.auditRepos(org: String, encAccessToken: String)

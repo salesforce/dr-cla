@@ -36,6 +36,7 @@ import org.joda.time.LocalDateTime
 import org.scalatestplus.play.{OneAppPerSuite, PlaySpec}
 import pdi.jwt.{JwtClaim, JwtJson}
 import play.api.Mode
+import play.api.i18n.MessagesApi
 import play.api.inject._
 import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.libs.json.{JsArray, JsObject, Json}
@@ -61,17 +62,18 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
 
   lazy val wsClient = app.injector.instanceOf[WSClient]
 
-  lazy val gitHub = new GitHub(app.configuration, wsClient)(ExecutionContext.global)
+  lazy val messagesApi = app.injector.instanceOf[MessagesApi]
+
+  lazy val gitHub = new GitHub(app.configuration, wsClient, messagesApi)(ExecutionContext.global)
 
   val testToken1 = sys.env("GITHUB_TEST_TOKEN1")
-  val testOrg1 = sys.env("GITHUB_TEST_ORG1")
-  val testOrg2 = sys.env("GITHUB_TEST_ORG2")
   val testToken2 = sys.env("GITHUB_TEST_TOKEN2")
+  val testOrg = sys.env("GITHUB_TEST_ORG")
 
   lazy val testLogin1 = (await(gitHub.userInfo(testToken1)) \ "login").as[String]
   lazy val testLogin2 = (await(gitHub.userInfo(testToken2)) \ "login").as[String]
 
-  lazy val testIntegrationInstallationId1: Int = {
+  lazy val testIntegrationInstallationId: Int = {
     val integrationInstallations = await(gitHub.integrationInstallations())
 
     integrationInstallations.value.find { json =>
@@ -85,16 +87,14 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
     val integrationInstallations = await(gitHub.integrationInstallations())
 
     integrationInstallations.value.find { json =>
-      (json \ "account" \ "login").asOpt[String].contains(testOrg2)
+      (json \ "account" \ "login").asOpt[String].contains(testOrg)
     }.flatMap { json =>
       (json \ "id").asOpt[Int]
-    }.getOrElse(throw new IllegalStateException(s"$testLogin1 must have the integration ${gitHub.integrationId} installed"))
+    }.getOrElse(throw new IllegalStateException(s"$testOrg must have the integration ${gitHub.integrationId} installed"))
   }
 
-  lazy val testIntegrationToken1 = (await(gitHub.installationAccessTokens(testIntegrationInstallationId1)) \ "token").as[String]
+  lazy val testIntegrationToken = (await(gitHub.installationAccessTokens(testIntegrationInstallationId)) \ "token").as[String]
   lazy val testIntegrationTokenOrg = (await(gitHub.installationAccessTokens(testIntegrationInstallationIdOrg)) \ "token").as[String]
-
-  lazy val integrationLogin = await(gitHub.integrationLoginFuture)
 
   // Poll until the repo has commits - So much gross
   @tailrec
@@ -158,8 +158,7 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
   lazy val testRepo2 = createRepo()
   lazy val testRepo3 = createRepo()
   lazy val testFork = createFork()
-  lazy val testOrg1Repo = createOrgRepo(testOrg1)
-  lazy val testOrg2Repo = createOrgRepo(testOrg2)
+  lazy val testOrgRepo = createOrgRepo(testOrg)
 
   lazy val testExternalPullRequest = {
     val testRepos2 = await(gitHub.userRepos(testLogin2, testToken2))
@@ -234,8 +233,7 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
       testRepo2
       testRepo3
       testFork
-      testOrg1Repo
-      testOrg2Repo
+      testOrgRepo
       testPullRequests
     }
     "verify the test structure" in {
@@ -244,31 +242,16 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
         testRepo1Collaborators.value.exists(_.\("login").as[String] == testLogin2) must be (false)
       }
 
-      withClue(s"$integrationLogin must be a member of $testOrg1: ") {
-        val orgMembers = await(gitHub.orgMembers(testOrg1, testToken1))
-        orgMembers.value.exists(_.\("login").as[String] == integrationLogin) must be (true)
-      }
-
-      withClue(s"$integrationLogin must not be a member of $testOrg2: ") {
-        val orgMembers = await(gitHub.orgMembers(testOrg2, testToken1))
-        orgMembers.value.exists(_.\("login").as[String] == integrationLogin) must be (false)
-      }
-
-      withClue(s"$testLogin2 must be a private member of $testOrg2: ") {
-        val allOrgMembers = await(gitHub.orgMembers(testOrg2, testToken1))
+      withClue(s"$testLogin2 must be a private member of $testOrg: ") {
+        val allOrgMembers = await(gitHub.orgMembers(testOrg, testToken1))
         allOrgMembers.value.exists(_.\("login").as[String] == testLogin2) must be (true)
-        val publicOrgMembers = await(gitHub.orgMembers(testOrg2, testIntegrationToken1))
+        val publicOrgMembers = await(gitHub.orgMembers(testOrg, testIntegrationToken))
         publicOrgMembers.value.exists(_.\("login").as[String] == testLogin2) must be (false)
       }
 
-      withClue(s"the integration must not be installed on $testOrg1: ") {
+      withClue(s"the integration must be installed on $testOrg: ") {
         val integrationInstallations = await(gitHub.integrationInstallations())
-        integrationInstallations.value.exists(_.\("account").\("login").as[String] == testOrg1) must be (false)
-      }
-
-      withClue(s"the integration must be installed on $testOrg2: ") {
-        val integrationInstallations = await(gitHub.integrationInstallations())
-        integrationInstallations.value.exists(_.\("account").\("login").as[String] == testOrg2) must be (true)
+        integrationInstallations.value.exists(_.\("account").\("login").as[String] == testOrg) must be (true)
       }
     }
   }
@@ -327,11 +310,11 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
       collaborators.value.find(_.\("login").as[String] == testLogin1) must be ('defined)
     }
     "work with the Integration" in {
-      val collaborators = await(gitHub.collaborators(testRepo1, testIntegrationToken1))
+      val collaborators = await(gitHub.collaborators(testRepo1, testIntegrationToken))
       collaborators.value.find(_.\("login").as[String] == testLogin1) must be ('defined)
     }
     "see hidden collaborators via the Integration" in {
-      val collaborators = await(gitHub.collaborators(testOrg2Repo, testIntegrationTokenOrg))
+      val collaborators = await(gitHub.collaborators(testOrgRepo, testIntegrationTokenOrg))
       collaborators.value.exists(_.\("login").as[String] == testLogin2) must be (true)
     }
   }
@@ -346,14 +329,14 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
   "GitHub.userOrgs" must {
     "include the orgs" in {
       val userOrgs = await(gitHub.userOrgs(testToken1))
-      userOrgs.value.map(_.\("login").as[String]) must contain (testOrg1)
+      userOrgs.value.map(_.\("login").as[String]) must contain (testOrg)
     }
   }
 
   "GitHub.allRepos" must {
     "include everything" in {
       val repo = Random.alphanumeric.take(8).mkString
-      val ownerRepo = (await(gitHub.createRepo(repo, Some(testOrg1))(testToken1)) \ "full_name").as[String]
+      val ownerRepo = (await(gitHub.createRepo(repo, Some(testOrg))(testToken1)) \ "full_name").as[String]
       val repos = await(gitHub.allRepos(testToken1))
       repos.value.map(_.\("full_name").as[String]) must contain (ownerRepo)
       val deleteResult = await(gitHub.deleteRepo(ownerRepo)(testToken1))
@@ -420,24 +403,24 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
 
   "GitHub.addOrgWebhook" must {
     "create an org Webhook" in {
-      val status = await(gitHub.addOrgWebhook(testOrg1, Seq("pull_request"), "http://localhost:9000/foobar", "json", testToken1))
+      val status = await(gitHub.addOrgWebhook(testOrg, Seq("pull_request"), "http://localhost:9000/foobar", "json", testToken1))
       (status \ "active").as[Boolean] must be (true)
     }
   }
 
   "GitHub.orgWebhooks" must {
     "get the org webhooks" in {
-      val webhooks = await(gitHub.orgWebhooks(testOrg1, testToken1))
+      val webhooks = await(gitHub.orgWebhooks(testOrg, testToken1))
       webhooks.value.exists(_.\("config").\("url").as[String] == "http://localhost:9000/foobar") must be (true)
     }
   }
 
   "GitHub.addOrgWebhook" must {
     "delete an org Webhook" in {
-      val webhooks = await(gitHub.orgWebhooks(testOrg1, testToken1))
+      val webhooks = await(gitHub.orgWebhooks(testOrg, testToken1))
       val deletes = webhooks.value.filter(_.\("config").\("url").as[String] == "http://localhost:9000/foobar").map { webhook =>
         val hookId = (webhook \ "id").as[Int]
-        await(gitHub.deleteOrgWebhook(testOrg1, hookId, testToken1))
+        await(gitHub.deleteOrgWebhook(testOrg, hookId, testToken1))
       }
       deletes.size must be > 0
     }
@@ -445,14 +428,14 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
 
   "GitHub.userOrgMembership" must {
     "get the users org membership" in {
-      val membership = await(gitHub.userOrgMembership(testOrg1, testToken1))
+      val membership = await(gitHub.userOrgMembership(testOrg, testToken1))
       (membership \ "role").asOpt[String] must be ('defined)
     }
   }
 
   "GitHub.orgMembers" must {
     "get the org members" in {
-      val members = await(gitHub.orgMembers(testOrg1, testToken1))
+      val members = await(gitHub.orgMembers(testOrg, testToken1))
       members.value.length must be > 0
     }
   }
@@ -476,7 +459,7 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
 
   "GitHub.installationAccessTokens" must {
     "work" in {
-      val result = await(gitHub.installationAccessTokens(testIntegrationInstallationId1))
+      val result = await(gitHub.installationAccessTokens(testIntegrationInstallationId))
       (result \ "token").asOpt[String] must be ('defined)
     }
   }
@@ -490,38 +473,29 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
 
   "GitHub.installationRepositories" must {
     "work" in {
-      val token = (await(gitHub.installationAccessTokens(testIntegrationInstallationId1)) \ "token").as[String]
+      val token = (await(gitHub.installationAccessTokens(testIntegrationInstallationId)) \ "token").as[String]
       val repos = await(gitHub.installationRepositories(token))
       repos.value.length must be > 0
     }
   }
 
-  "GitHub.pullRequestsToBeValidatedViaDirectAccess" must {
-    "work" in {
-      val integrationLogin = await(gitHub.integrationLoginFuture)
-      await(gitHub.addCollaborator(testExternalPullRequestOwnerRepo, integrationLogin, testToken1))
-      val pullRequestsToBeValidated = await(gitHub.pullRequestsToBeValidatedViaDirectAccess(testLogin2, gitHub.integrationToken))
-      pullRequestsToBeValidated.size must be > 0
-    }
-  }
-
   "GitHub.pullRequestsToBeValidatedViaIntegrations" must {
     "work" in {
-      val pullRequestsToBeValidated = await(gitHub.pullRequestsToBeValidatedViaIntegrations(testLogin2))
+      val pullRequestsToBeValidated = await(gitHub.pullRequestsToBeValidated(testLogin2))
       pullRequestsToBeValidated.size must be > 0
     }
   }
 
   "GitHub.pullRequestCommitters" must {
     "work" in {
-      val pullRequestCommitters = await(gitHub.pullRequestCommitters(testInternalPullRequestOwnerRepo, testInternalPullRequestNum, testInternalPullRequestSha, testIntegrationToken1))
+      val pullRequestCommitters = await(gitHub.pullRequestCommitters(testInternalPullRequestOwnerRepo, testInternalPullRequestNum, testInternalPullRequestSha, testIntegrationToken))
       pullRequestCommitters must equal (Set(testLogin1))
     }
   }
 
   "GitHub.externalContributors" must {
     "not include repo collaborators" in {
-      val externalContributors = await(gitHub.externalContributorsForPullRequest(testInternalPullRequestOwnerRepo, testInternalPullRequestNum, testInternalPullRequestSha, testIntegrationToken1))
+      val externalContributors = await(gitHub.externalContributorsForPullRequest(testInternalPullRequestOwnerRepo, testInternalPullRequestNum, testInternalPullRequestSha, testIntegrationToken))
       externalContributors must be ('empty)
     }
   }
@@ -529,7 +503,7 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
   // note that ordering is important here because we validate the same PR multiple times
   "GitHub.validatePullRequests" must {
     "work with integrations for pull requests with only internal contributors" in {
-      val pullRequestsViaIntegration = Map(testInternalPullRequest -> testIntegrationToken1)
+      val pullRequestsViaIntegration = Map(testInternalPullRequest -> testIntegrationToken)
 
       val validationResultsFuture = gitHub.validatePullRequests(pullRequestsViaIntegration, "http://asdf.com/") { _ =>
         Future.successful(Set.empty[ClaSignature])
@@ -540,14 +514,14 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
       (validationResults.head \ "creator" \ "login").as[String].endsWith("[bot]") must be (true)
       (validationResults.head \ "state").as[String] must equal ("success")
 
-      val labels = await(gitHub.getIssueLabels(testInternalPullRequestOwnerRepo, testInternalPullRequestNum, testIntegrationToken1))
+      val labels = await(gitHub.getIssueLabels(testInternalPullRequestOwnerRepo, testInternalPullRequestNum, testIntegrationToken))
       labels.value must be ('empty)
 
-      val issueComments = await(gitHub.issueComments(testInternalPullRequestOwnerRepo, testInternalPullRequestNum, testIntegrationToken1))
+      val issueComments = await(gitHub.issueComments(testInternalPullRequestOwnerRepo, testInternalPullRequestNum, testIntegrationToken))
       issueComments.value must be ('empty)
     }
     "not comment on a pull request when the external contributors have signed the CLA" in {
-      val pullRequestsViaIntegration = Map(testExternalPullRequest -> testIntegrationToken1)
+      val pullRequestsViaIntegration = Map(testExternalPullRequest -> testIntegrationToken)
 
       val validationResultsFuture = gitHub.validatePullRequests(pullRequestsViaIntegration, "http://asdf.com/") { _ =>
         Future.successful(Set(ClaSignature(1, Contact(1, "Jon", "Doe", "jdoe@foo.com", testLogin2), new LocalDateTime(), "1.0")))
@@ -557,14 +531,14 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
       validationResults.size must equal (1)
       (validationResults.head \ "state").as[String] must equal ("success")
 
-      val labels = await(gitHub.getIssueLabels(testExternalPullRequestOwnerRepo, testExternalPullRequestNum, testIntegrationToken1))
+      val labels = await(gitHub.getIssueLabels(testExternalPullRequestOwnerRepo, testExternalPullRequestNum, testIntegrationToken))
       labels.value.exists(_.\("name").as[String] == "cla:signed") must be (true)
 
-      val issueComments = await(gitHub.issueComments(testExternalPullRequestOwnerRepo, testExternalPullRequestNum, testIntegrationToken1))
+      val issueComments = await(gitHub.issueComments(testExternalPullRequestOwnerRepo, testExternalPullRequestNum, testIntegrationToken))
       issueComments.value.count(_.\("user").\("login").as[String].endsWith("[bot]")) must equal (0)
     }
     "work with integrations for pull requests with external contributors" in {
-      val pullRequestsViaIntegration = Map(testExternalPullRequest -> testIntegrationToken1)
+      val pullRequestsViaIntegration = Map(testExternalPullRequest -> testIntegrationToken)
 
       val validationResultsFuture = gitHub.validatePullRequests(pullRequestsViaIntegration, "http://asdf.com/") { _ =>
         Future.successful(Set.empty[ClaSignature])
@@ -575,14 +549,14 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
       (validationResults.head \ "creator" \ "login").as[String].endsWith("[bot]") must be (true)
       (validationResults.head \ "state").as[String] must equal ("failure")
 
-      val labels = await(gitHub.getIssueLabels(testExternalPullRequestOwnerRepo, testExternalPullRequestNum, testIntegrationToken1))
+      val labels = await(gitHub.getIssueLabels(testExternalPullRequestOwnerRepo, testExternalPullRequestNum, testIntegrationToken))
       labels.value.exists(_.\("name").as[String] == "cla:missing") must be (true)
 
-      val issueComments = await(gitHub.issueComments(testExternalPullRequestOwnerRepo, testExternalPullRequestNum, testIntegrationToken1))
+      val issueComments = await(gitHub.issueComments(testExternalPullRequestOwnerRepo, testExternalPullRequestNum, testIntegrationToken))
       issueComments.value.count(_.\("user").\("login").as[String].endsWith("[bot]")) must equal (1)
     }
     "not comment twice on the same pull request" in {
-      val pullRequestsViaIntegration = Map(testExternalPullRequest -> testIntegrationToken1)
+      val pullRequestsViaIntegration = Map(testExternalPullRequest -> testIntegrationToken)
 
       await(gitHub.validatePullRequests(pullRequestsViaIntegration, "http://asdf.com/")(_ => Future.successful(Set.empty[ClaSignature])))
       await(gitHub.validatePullRequests(pullRequestsViaIntegration, "http://asdf.com/")(_ => Future.successful(Set.empty[ClaSignature])))
@@ -592,17 +566,17 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
     }
   }
 
-  // todo
   "integrationAndUserOrgs" should {
     "work" in {
-      cancel
+      val integrationAndUserOrgs = await(gitHub.integrationAndUserOrgs(testToken1))
+      integrationAndUserOrgs.get(testOrg) must be ('defined)
     }
   }
 
-  // todo
   "repoContributors" should {
     "worl" in {
-      cancel
+      val repoContributros = await(gitHub.repoContributors(testOrgRepo, testIntegrationToken))
+      repoContributros.value.exists(_.\("login").as[String] == testLogin1) must be (true)
     }
   }
 
@@ -613,8 +587,7 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
         await(gitHub.deleteRepo(testRepo1)(testToken1))
         await(gitHub.deleteRepo(testRepo2)(testToken1))
         await(gitHub.deleteRepo(testRepo3)(testToken1))
-        await(gitHub.deleteRepo(testOrg1Repo)(testToken1))
-        await(gitHub.deleteRepo(testOrg2Repo)(testToken1))
+        await(gitHub.deleteRepo(testOrgRepo)(testToken1))
       }
     }
   }
