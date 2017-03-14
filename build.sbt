@@ -1,4 +1,3 @@
-import de.heikoseeberger.sbtheader.HeaderPattern
 import de.heikoseeberger.sbtheader.license.BSD3Clause
 
 lazy val root = (project in file(".")).enablePlugins(PlayScala, ForcePlugin, AutomateHeaderPlugin)
@@ -27,6 +26,8 @@ libraryDependencies ++= Seq(
   "org.webjars"            %  "salesforce-lightning-design-system" % "0.10.1",
   "org.webjars"            %  "octicons"                           % "3.1.0",
   "org.webjars.bower"      %  "signature_pad"                      % "1.5.1",
+
+  "javax.mail"             %  "mail"                               % "1.4",
 
   "org.scalatestplus.play" %% "scalatestplus-play"                 % "1.5.1" % "test"
 )
