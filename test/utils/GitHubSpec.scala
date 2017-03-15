@@ -39,7 +39,7 @@ import play.api.Mode
 import play.api.i18n.MessagesApi
 import play.api.inject._
 import play.api.inject.guice.GuiceApplicationBuilder
-import play.api.libs.json.{JsArray, JsObject, Json}
+import play.api.libs.json._
 import play.api.libs.ws.WSClient
 import play.api.test.Helpers._
 
@@ -193,8 +193,9 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
     Json.obj("pull_request" -> externalPullRequest)
   }
 
-  lazy val testInternalPullRequest = {
+  def createTestPullRequest() = {
     val newContents = Random.alphanumeric.take(32).mkString
+    val newBranchName = Random.alphanumeric.take(8).mkString
 
     val readmeSha = (await(gitHub.getFile(testRepo1, "README.md")(testToken1)) \ "sha").as[String]
 
@@ -202,20 +203,23 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
 
     val sha = (commits.value.head \ "sha").as[String]
 
-    waitForFileToBeReady(testRepo1, "README.md", sha, testToken2)
+    waitForFileToBeReady(testRepo1, "README.md", sha, testToken1)
 
-    val newBranch = await(gitHub.createBranch(testRepo1, "testing", sha, testToken1))
+    val newBranch = await(gitHub.createBranch(testRepo1, newBranchName, sha, testToken1))
 
-    waitForFileToBeReady(testRepo1, "README.md", "testing", testToken1)
+    waitForFileToBeReady(testRepo1, "README.md", newBranchName, testToken1)
 
-    val internalEditResult = await(gitHub.editFile(testRepo1, "README.md", newContents, "Updated", readmeSha, Some("testing"))(testToken1))
+    val internalEditResult = await(gitHub.editFile(testRepo1, "README.md", newContents, "Updated", readmeSha, Some(newBranchName))(testToken1))
     (internalEditResult \ "commit").asOpt[JsObject] must be ('defined)
 
-    val internalPullRequest = await(gitHub.createPullRequest(testRepo1, "Updates", "testing", "master", testToken1))
+    val internalPullRequest = await(gitHub.createPullRequest(testRepo1, "Updates", newBranchName, "master", testToken1))
     (internalPullRequest \ "id").asOpt[Int] must be ('defined)
 
-    Json.obj("pull_request" -> internalPullRequest)
+    internalPullRequest
   }
+
+  lazy val testInternalPullRequest = Json.obj("pull_request" -> createTestPullRequest())
+
 
   lazy val testPullRequests = Map(testExternalPullRequest -> testToken1, testInternalPullRequest -> testToken1)
 
@@ -252,6 +256,11 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
       withClue(s"the integration must be installed on $testOrg: ") {
         val integrationInstallations = await(gitHub.integrationInstallations())
         integrationInstallations.value.exists(_.\("account").\("login").as[String] == testOrg) must be (true)
+      }
+
+      withClue(s"the integration must be installed on $testLogin1: ") {
+        val integrationInstallations = await(gitHub.integrationInstallations())
+        integrationInstallations.value.exists(_.\("account").\("login").as[String] == testLogin1) must be (true)
       }
     }
   }
@@ -348,6 +357,28 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
     "get the pull requests" in {
       val pullRequestsInRepo = await(gitHub.pullRequests(testExternalPullRequestOwnerRepo, testToken1))
       pullRequestsInRepo.value.length must be > 0
+    }
+    "be able to filter" in {
+      val closedPullRequests = await(gitHub.pullRequests(testExternalPullRequestOwnerRepo, testToken1, Some("closed")))
+      closedPullRequests.value.length must equal (0)
+    }
+  }
+
+  "GitHub.pullRequestsToValidate" must {
+    val testPullRequest = (testInternalPullRequest \ "pull_request").as[JsObject]
+    "work" in {
+      val pullRequestsToValidate = await(gitHub.pullRequestsToValidate(testPullRequest, testIntegrationToken))
+      pullRequestsToValidate must not be empty
+    }
+    "not include closed pull requests" in {
+      val closedPullRequest = testPullRequest + ("state" -> JsString("closed"))
+      val pullRequestsToValidate = await(gitHub.pullRequestsToValidate(closedPullRequest, testIntegrationToken))
+      pullRequestsToValidate must be (empty)
+    }
+    "not include bot pull requests" in {
+      val botPullRequest = testPullRequest + ("user" -> Json.obj("type" -> "Bot"))
+      val pullRequestsToValidate = await(gitHub.pullRequestsToValidate(botPullRequest, testIntegrationToken))
+      pullRequestsToValidate must be (empty)
     }
   }
 
@@ -479,10 +510,26 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
     }
   }
 
-  "GitHub.pullRequestsToBeValidatedViaIntegrations" must {
+  "GitHub.pullRequestsToBeValidated" must {
+    val pullRequest = createTestPullRequest()
+    val sha = (pullRequest \ "head" \ "sha").as[String]
+    val number = (pullRequest \ "number").as[Int]
+
     "work" in {
-      val pullRequestsToBeValidated = await(gitHub.pullRequestsToBeValidated(testLogin2))
-      pullRequestsToBeValidated.size must be > 0
+      val pullRequestsToBeValidated = await(gitHub.pullRequestsToBeValidated(testLogin1))
+      pullRequestsToBeValidated must be (empty)
+    }
+    "include failure state pull requests" in {
+      await(gitHub.createStatus(testRepo1, sha, "failure", "http://foo.com", "testing", "salesforce-cla", testToken1))
+
+      val pullRequestsToBeValidated = await(gitHub.pullRequestsToBeValidated(testLogin1))
+      pullRequestsToBeValidated must not be empty
+    }
+    "not include closed pull requests" in {
+      await(gitHub.closePullRequest(testRepo1, number, testToken1))
+
+      val pullRequestsToBeValidatedPostClose = await(gitHub.pullRequestsToBeValidated(testLogin1))
+      pullRequestsToBeValidatedPostClose must be (empty)
     }
   }
 
@@ -493,7 +540,7 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
     }
   }
 
-  "GitHub.externalContributors" must {
+  "GitHub.externalContributorsForPullRequest" must {
     "not include repo collaborators" in {
       val externalContributors = await(gitHub.externalContributorsForPullRequest(testInternalPullRequestOwnerRepo, testInternalPullRequestNum, testInternalPullRequestSha, testIntegrationToken))
       externalContributors must be ('empty)

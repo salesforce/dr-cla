@@ -29,7 +29,7 @@ libraryDependencies ++= Seq(
 
   "javax.mail"             %  "mail"                               % "1.4",
 
-  "org.scalatestplus.play" %% "scalatestplus-play"                 % "1.5.1" % "test"
+  "org.scalatestplus.play" %% "scalatestplus-play"                 % "2.0.0" % "test"
 )
 
 pipelineStages := Seq(digest, gzip)

@@ -149,18 +149,10 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
 
   private def handlePullRequest(jsValue: JsValue, token: String)(implicit request: RequestHeader): Future[Iterable[JsObject]] = {
     (jsValue \ "pull_request").asOpt[JsValue].fold(Future.failed[Iterable[JsObject]](NoPullRequest())) { pullRequest =>
-      val state = (pullRequest \ "state").as[String]
-      val userType = (pullRequest \ "user" \ "type").as[String]
-      (state, userType) match {
-        // Only run the validator for open pull requests where the user is a user (i.e. not a bot)
-        case ("open", "User") =>
-          for {
-            pullRequestWithCommitsAndStatus <- gitHub.pullRequestWithCommitsAndStatus(token)(pullRequest)
-            validate <- validatePullRequests(Map(pullRequestWithCommitsAndStatus -> token))
-          } yield validate
-        case _ =>
-          Future.successful(Iterable.empty[JsObject])
-      }
+      for {
+        pullRequestsToValidate <- gitHub.pullRequestsToValidate(pullRequest, token)
+        validate <- validatePullRequests(pullRequestsToValidate)
+      } yield validate
     }
   }
 

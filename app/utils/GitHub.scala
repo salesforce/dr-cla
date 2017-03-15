@@ -218,9 +218,11 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     ws(path, accessToken).get().flatMap(okT[JsValue])
   }
 
-  def pullRequests(ownerRepo: String, accessToken: String): Future[JsArray] = {
+  // todo: paging
+  def pullRequests(ownerRepo: String, accessToken: String, filterState: Option[String] = None): Future[JsArray] = {
     val path = s"repos/$ownerRepo/pulls"
-    ws(path, accessToken).get().flatMap { response =>
+    val params = filterState.fold(Map.empty[String, String])(state => Map("state" -> state)).toSeq
+    ws(path, accessToken).withQueryString(params:_*).get().flatMap { response =>
       response.status match {
         // sometimes GitHub says we have access to a repo, but it doesn't actually exist
         case Status.NOT_FOUND => Future.successful(JsArray())
@@ -463,6 +465,11 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     ws(s"repos/$ownerRepo/pulls", accessToken).post(json).flatMap(createdT[JsObject])
   }
 
+  def closePullRequest(ownerRepo: String, number: Int, accessToken: String): Future[JsObject] = {
+    val json = Json.obj("state" -> "closed")
+    ws(s"repos/$ownerRepo/pulls/$number", accessToken).patch(json).flatMap(okT[JsObject])
+  }
+
   def addCollaborator(ownerRepo: String, username: String, accessToken: String): Future[Unit] = {
     ws(s"repos/$ownerRepo/collaborators/$username", accessToken).put(EmptyContent()).flatMap(nocontent)
   }
@@ -482,13 +489,35 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     contributors.contains(contributorId) && (state == prState)
   }
 
-  // todo: optimize this
+  def isUserPullRequest(pullRequest: JsValue): Boolean = {
+    val userType = (pullRequest \ "user" \ "type").as[String]
+    userType == "User"
+  }
+
+  def isOpenPullRequest(pullRequest: JsValue): Boolean = {
+    val state = (pullRequest \ "state").as[String]
+    state == "open"
+  }
+
+  def pullRequestsToValidate(pullRequest: JsValue, accessToken: String): Future[Map[JsObject, String]] = {
+    if (isUserPullRequest(pullRequest) && isOpenPullRequest(pullRequest)) {
+      pullRequestWithCommitsAndStatus(accessToken)(pullRequest).map { pullRequestDetails =>
+        Map(pullRequestDetails -> accessToken)
+      }
+    }
+    else {
+      Future.successful(Map.empty[JsObject, String])
+    }
+  }
+
+// todo: optimize this
   private def pullRequestsNeedingValidationForAccessToken(signerGitHubId: String, repos: Seq[JsObject], accessToken: String): Future[Map[JsObject, String]] = {
     val repoNames = repos.map(_.\("full_name").as[String]).toSet
 
     for {
-      allPullRequests <- Future.sequence(repoNames.map(ownerRepo => pullRequests(ownerRepo, accessToken)))
-      pullRequestWithCommitsAndStatus <- Future.sequence(allPullRequests.flatMap(_.value).map(pullRequestWithCommitsAndStatus(accessToken)))
+      allPullRequests <- Future.sequence(repoNames.map(ownerRepo => pullRequests(ownerRepo, accessToken, Some("open"))))
+      onlyUserPullRequests = allPullRequests.flatMap(_.value).filter(isUserPullRequest)
+      pullRequestWithCommitsAndStatus <- Future.sequence(onlyUserPullRequests.map(pullRequestWithCommitsAndStatus(accessToken)))
     } yield pullRequestWithCommitsAndStatus.filter(pullRequestHasContributorAndState(signerGitHubId, "failure")).map { pullRequest =>
       pullRequest -> accessToken
     }.toMap
