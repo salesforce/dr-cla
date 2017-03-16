@@ -511,9 +511,9 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
   }
 
   "GitHub.pullRequestsToBeValidated" must {
-    val pullRequest = createTestPullRequest()
-    val sha = (pullRequest \ "head" \ "sha").as[String]
-    val number = (pullRequest \ "number").as[Int]
+    lazy val pullRequest = createTestPullRequest()
+    lazy val sha = (pullRequest \ "head" \ "sha").as[String]
+    lazy val number = (pullRequest \ "number").as[Int]
 
     "work" in {
       val pullRequestsToBeValidated = await(gitHub.pullRequestsToBeValidated(testLogin1))
