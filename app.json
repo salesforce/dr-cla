@@ -3,6 +3,21 @@
   "env": {
     "APPLICATION_SECRET": {
       "generator": "secret"
+    },
+    "GITHUB_CLIENT_ID": {
+      "description": "GitHub OAuth Client ID"
+    },
+    "GITHUB_CLIENT_SECRET": {
+      "description": "GitHub OAuth Client Secret"
+    },
+    "GITHUB_INTEGRATION_ID": {
+      "description": "GitHub Integration ID"
+    },
+    "GITHUB_INTEGRATION_SLUG": {
+      "description": "GitHub Integration Slug"
+    },
+    "GITHUB_INTEGRATION_PRIVATE_KEY": {
+      "description": "GitHub Integration Private Key"
     }
   },
   "addons": [
