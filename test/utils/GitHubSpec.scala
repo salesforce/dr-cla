@@ -108,12 +108,12 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
   }
 
   @tailrec
-  private def waitForFileToBeReady(ownerRepo: String, path: String, sha: String, accessToken: String): Unit = {
-    val file = Try(await(gitHub.getFile(ownerRepo, path, Some(sha))(accessToken)))
+  private def waitForFileToBeReady(ownerRepo: String, path: String, ref: String, accessToken: String): Unit = {
+    val file = Try(await(gitHub.getFile(ownerRepo, path, Some(ref))(accessToken)))
 
     if (file.isFailure) {
       Thread.sleep(1000)
-      waitForFileToBeReady(ownerRepo, path, sha, accessToken)
+      waitForFileToBeReady(ownerRepo, path, ref, accessToken)
     }
   }
 
@@ -365,7 +365,7 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
   }
 
   "GitHub.pullRequestsToValidate" must {
-    val testPullRequest = (testInternalPullRequest \ "pull_request").as[JsObject]
+    lazy val testPullRequest = (testInternalPullRequest \ "pull_request").as[JsObject]
     "work" in {
       val pullRequestsToValidate = await(gitHub.pullRequestsToValidate(testPullRequest, testIntegrationToken))
       pullRequestsToValidate must not be empty
