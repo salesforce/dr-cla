@@ -538,6 +538,10 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
       val pullRequestCommitters = await(gitHub.pullRequestCommitters(testInternalPullRequestOwnerRepo, testInternalPullRequestNum, testInternalPullRequestSha, testIntegrationToken))
       pullRequestCommitters must equal (Set(testLogin1))
     }
+    "fail with non-github user contributors" in {
+      // todo: but hard to simulate
+      cancel()
+    }
   }
 
   "GitHub.externalContributorsForPullRequest" must {

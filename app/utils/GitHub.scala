@@ -554,7 +554,10 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     prCommitsFuture.flatMap { commits =>
       val commitsWithMaybeLogins = commits.value.map { commit =>
         val maybeAuthorLogin = (commit \ "author" \ "login").asOpt[String]
-        maybeAuthorLogin.fold(Future.failed[String](GitHub.AuthorLoginNotFound(sha, (commit \ "commit" \ "author").as[JsObject])))(Future.successful)
+        maybeAuthorLogin.fold {
+          val author = (commit \ "commit" \ "author").as[JsObject]
+          Future.failed[String](GitHub.AuthorLoginNotFound(sha, author))
+        } (Future.successful)
       }
 
       Future.sequence(commitsWithMaybeLogins).map(_.toSet)
@@ -623,6 +626,24 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     }
   }
 
+  def authorLoginNotFoundComment(ownerRepo: String, prNumber: Int, claUrl: String, authorLoginNotFound: GitHub.AuthorLoginNotFound, accessToken: String): Future[Either[JsValue, Unit]] = {
+    issueComments(ownerRepo, prNumber, accessToken).flatMap { comments =>
+      val message = authorLoginNotFound.maybeName.fold {
+        messagesApi("cla.author-not-found-without-name", claUrl)
+      } { name =>
+        messagesApi("cla.author-not-found-with-name", name, claUrl)
+      }
+
+      val alreadyCommented = comments.value.exists(_.\("body").as[String] == message)
+      if (!alreadyCommented) {
+        commentOnIssue(ownerRepo, prNumber, message, accessToken).map(Left(_))
+      }
+      else {
+        Future.successful(Right(Unit))
+      }
+    }
+  }
+
   def updatePullRequestLabel(ownerRepo: String, prNumber: Int, hasExternalContributors: Boolean, hasMissingClas: Boolean, accessToken: String): Future[JsValue] = {
     if (hasExternalContributors) {
       if (hasMissingClas) {
@@ -656,7 +677,9 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
 
         pullRequestStatusFuture.recoverWith {
           case e: GitHub.AuthorLoginNotFound =>
-            createStatus(ownerRepo, sha, "error", claUrl, e.getMessage, "salesforce-cla", token)
+            authorLoginNotFoundComment(ownerRepo, prNumber, claUrl, e, token).flatMap { _ =>
+              createStatus(ownerRepo, sha, "error", claUrl, e.getMessage, "salesforce-cla", token)
+            }
         }
       }
     }
@@ -752,12 +775,8 @@ object GitHub {
   }
 
   case class AuthorLoginNotFound(sha: String, author: JsObject) extends Exception {
-    override def getMessage: String = {
-      val maybeName = (author \ "name").asOpt[String]
-      maybeName.fold(s"Could not find a GitHub user on commit $sha") { name =>
-        s"Could not find a GitHub user for $name on commit $sha"
-      }
-    }
+    val maybeName: Option[String] = (author \ "name").asOpt[String]
+    override def getMessage: String = "Commit authors must be associated with GitHub users"
   }
 
   case class IncorrectResponseStatus(expectedStatusCode: Int, actualStatusCode: Int, message: String) extends Exception {
