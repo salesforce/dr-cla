@@ -48,10 +48,11 @@ class LoggerConfigurator extends LogbackLoggerConfigurator {
 
     val maybeSmtpServer = sys.env.get("POSTMARK_SMTP_SERVER")
     val maybePostmarkApiToken = sys.env.get("POSTMARK_API_TOKEN")
-    val maybeErrorEmail = sys.env.get("ERROR_EMAIL")
+    val maybeErrorToEmail = sys.env.get("ERROR_TO_EMAIL")
+    val maybeErrorFromEmail = sys.env.get("ERROR_FROM_EMAIL")
 
-    (maybeSmtpServer, maybePostmarkApiToken, maybeErrorEmail) match {
-      case (Some(smtpServer), Some(postmarkApiToken), Some(errorEmail)) =>
+    (maybeSmtpServer, maybePostmarkApiToken, maybeErrorToEmail, maybeErrorFromEmail) match {
+      case (Some(smtpServer), Some(postmarkApiToken), Some(errorToEmail), Some(errorFromEmail)) =>
         rootLogger.info("Will email errors to $errorEmail")
 
         val pl = new PatternLayout()
@@ -70,8 +71,8 @@ class LoggerConfigurator extends LogbackLoggerConfigurator {
         smtpAppender.setSmtpHost(smtpServer)
         smtpAppender.setUsername(postmarkApiToken)
         smtpAppender.setPassword(postmarkApiToken)
-        smtpAppender.addTo(errorEmail)
-        smtpAppender.setFrom(errorEmail)
+        smtpAppender.addTo(errorToEmail)
+        smtpAppender.setFrom(errorFromEmail)
         smtpAppender.setSTARTTLS(true)
         smtpAppender.setSSL(true)
         smtpAppender.start()
