@@ -118,6 +118,16 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
   }
 
   @tailrec
+  private def waitForCommit(ownerRepo: String, sha: String, token: String) {
+    val repoCommits = Try(await(gitHub.repoCommits(ownerRepo, token))).getOrElse(JsArray())
+
+    if (!repoCommits.value.exists(_.\("sha").as[String] == sha)) {
+      Thread.sleep(1000)
+      waitForCommit(ownerRepo, sha, token)
+    }
+  }
+
+  @tailrec
   private def waitForFileToBeReady(ownerRepo: String, path: String, ref: String, accessToken: String): Unit = {
     val file = Try(await(gitHub.getFile(ownerRepo, path, Some(ref))(accessToken)))
 
@@ -206,6 +216,8 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
     // external pull request
     val editResult = await(gitHub.editFile(testFork, "README.md", newContents, "Updated", readmeSha)(testToken2))
     (editResult \ "commit").asOpt[JsObject] must be ('defined)
+    val editSha = (editResult \ "commit" \ "sha").as[String]
+    waitForCommit(testFork, editSha, testToken2)
 
     // testToken2 create PR to testToken1
     val externalPullRequest = await(gitHub.createPullRequest(testRepo1, "Updates", s"$testLogin2:master", "master", testToken2))
@@ -234,6 +246,8 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
 
     val internalEditResult = await(gitHub.editFile(testRepo1, "README.md", newContents, "Updated", readmeSha, Some(newBranchName))(testToken1))
     (internalEditResult \ "commit").asOpt[JsObject] must be ('defined)
+    val editSha = (internalEditResult \ "commit" \ "sha").as[String]
+    waitForCommit(testFork, editSha, testToken1)
 
     val internalPullRequest = await(gitHub.createPullRequest(testRepo1, "Updates", newBranchName, "master", testToken1))
     (internalPullRequest \ "id").asOpt[Int] must be ('defined)
