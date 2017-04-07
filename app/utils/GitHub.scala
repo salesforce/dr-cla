@@ -370,6 +370,11 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     ws(path, accessToken).patch(json).flatMap(okT[JsObject])
   }
 
+  def repoCommit(ownerRepo: String, sha: String, accessToken: String): Future[JsObject] = {
+    val path = s"repos/$ownerRepo/commits/$sha"
+    ws(path, accessToken).get().flatMap(okT[JsObject])
+  }
+
   // todo: definitely will need paging
   def repoCommits(ownerRepo: String, accessToken: String): Future[JsArray] = {
     val path = s"repos/$ownerRepo/commits"

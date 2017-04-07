@@ -33,7 +33,8 @@ package utils
 import models.{ClaSignature, Contact}
 import modules.{Database, DatabaseMock}
 import org.joda.time.LocalDateTime
-import org.scalatestplus.play.{OneAppPerSuite, PlaySpec}
+import org.scalatestplus.play.guice.GuiceOneAppPerSuite
+import org.scalatestplus.play.PlaySpec
 import pdi.jwt.{JwtClaim, JwtJson}
 import play.api.Mode
 import play.api.i18n.MessagesApi
@@ -48,7 +49,7 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Random, Success, Try}
 
 
-class GitHubSpec extends PlaySpec with OneAppPerSuite {
+class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
 
   override implicit lazy val app = new GuiceApplicationBuilder()
     .overrides(bind[Database].to[DatabaseMock])
@@ -119,9 +120,9 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
 
   @tailrec
   private def waitForCommit(ownerRepo: String, sha: String, token: String) {
-    val repoCommits = Try(await(gitHub.repoCommits(ownerRepo, token))).getOrElse(JsArray())
+    val repoCommit = Try(await(gitHub.repoCommit(ownerRepo, sha, token)))
 
-    if (!repoCommits.value.exists(_.\("sha").as[String] == sha)) {
+    if (repoCommit.isFailure) {
       Thread.sleep(1000)
       waitForCommit(ownerRepo, sha, token)
     }
@@ -247,7 +248,7 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
     val internalEditResult = await(gitHub.editFile(testRepo1, "README.md", newContents, "Updated", readmeSha, Some(newBranchName))(testToken1))
     (internalEditResult \ "commit").asOpt[JsObject] must be ('defined)
     val editSha = (internalEditResult \ "commit" \ "sha").as[String]
-    waitForCommit(testFork, editSha, testToken1)
+    waitForCommit(testRepo1, editSha, testToken1)
 
     val internalPullRequest = await(gitHub.createPullRequest(testRepo1, "Updates", newBranchName, "master", testToken1))
     (internalPullRequest \ "id").asOpt[Int] must be ('defined)
@@ -508,6 +509,13 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
     "get the org members" in {
       val members = await(gitHub.orgMembers(testOrg, testToken1))
       members.value.length must be > 0
+    }
+  }
+
+  "GitHub.repoCommit" must {
+    "get the repo commit" in {
+      val commit = await(gitHub.repoCommit(testExternalPullRequestOwnerRepo, testExternalPullRequestSha, testToken1))
+      (commit \ "sha").as[String] must equal (testExternalPullRequestSha)
     }
   }
 
