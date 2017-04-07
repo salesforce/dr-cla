@@ -98,12 +98,12 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
 
   // Poll until the repo has commits - So much gross
   @tailrec
-  private def waitForCommits(ownerRepo: String, testToken1: String) {
-    val repoCommits = Try(await(gitHub.repoCommits(ownerRepo, testToken1))).getOrElse(JsArray())
+  private def waitForCommits(ownerRepo: String, token: String) {
+    val repoCommits = Try(await(gitHub.repoCommits(ownerRepo, token))).getOrElse(JsArray())
 
     if (repoCommits.value.isEmpty) {
       Thread.sleep(1000)
-      waitForCommits(ownerRepo, testToken1)
+      waitForCommits(ownerRepo, token)
     }
   }
 
@@ -114,6 +114,17 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
     if (file.isFailure) {
       Thread.sleep(1000)
       waitForFileToBeReady(ownerRepo, path, ref, accessToken)
+    }
+  }
+
+  @tailrec
+  private def waitForPullRequest(ownerRepo: String, prNumber: Int, accessToken: String): Unit = {
+
+    val pr = Try(await(gitHub.getPullRequest(ownerRepo, prNumber, accessToken)))
+
+    if (pr.isFailure) {
+      Thread.sleep(1000)
+      waitForPullRequest(ownerRepo, prNumber, accessToken)
     }
   }
 
@@ -189,6 +200,8 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
     // testToken2 create PR to testToken1
     val externalPullRequest = await(gitHub.createPullRequest(testRepo1, "Updates", s"$testLogin2:master", "master", testToken2))
     (externalPullRequest \ "id").asOpt[Int] must be ('defined)
+    val prNumber = (externalPullRequest \ "number").as[Int]
+    waitForPullRequest(testRepo1, prNumber, testToken2)
 
     Json.obj("pull_request" -> externalPullRequest)
   }
@@ -214,6 +227,8 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
 
     val internalPullRequest = await(gitHub.createPullRequest(testRepo1, "Updates", newBranchName, "master", testToken1))
     (internalPullRequest \ "id").asOpt[Int] must be ('defined)
+    val prNumber = (internalPullRequest \ "number").as[Int]
+    waitForPullRequest(testRepo1, prNumber, testToken1)
 
     internalPullRequest
   }
@@ -265,7 +280,7 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
     }
   }
 
-  "GitHub.allRepos" must {
+  "GitHub.userRepos" must {
     "fetch all the repos with 10 pages" in {
       (testRepo1, testRepo2, testRepo3) // create 3 repos lazily
       val repos = await(gitHub.userRepos(testLogin1, testToken1, 1))
@@ -346,6 +361,7 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
     "include everything" in {
       val repo = Random.alphanumeric.take(8).mkString
       val ownerRepo = (await(gitHub.createRepo(repo, Some(testOrg))(testToken1)) \ "full_name").as[String]
+      waitForCommits(ownerRepo, testToken1)
       val repos = await(gitHub.allRepos(testToken1))
       repos.value.map(_.\("full_name").as[String]) must contain (ownerRepo)
       val deleteResult = await(gitHub.deleteRepo(ownerRepo)(testToken1))
