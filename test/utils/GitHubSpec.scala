@@ -98,6 +98,16 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
 
   // Poll until the repo has commits - So much gross
   @tailrec
+  private def waitForRepo(ownerRepo: String, token: String) {
+    val repo = Try(await(gitHub.repo(ownerRepo)(token)))
+
+    if (repo.isFailure) {
+      Thread.sleep(1000)
+      waitForRepo(ownerRepo, token)
+    }
+  }
+
+  @tailrec
   private def waitForCommits(ownerRepo: String, token: String) {
     val repoCommits = Try(await(gitHub.repoCommits(ownerRepo, token))).getOrElse(JsArray())
 
@@ -361,7 +371,7 @@ class GitHubSpec extends PlaySpec with OneAppPerSuite {
     "include everything" in {
       val repo = Random.alphanumeric.take(8).mkString
       val ownerRepo = (await(gitHub.createRepo(repo, Some(testOrg))(testToken1)) \ "full_name").as[String]
-      waitForCommits(ownerRepo, testToken1)
+      waitForRepo(ownerRepo, testToken1)
       val repos = await(gitHub.allRepos(testToken1))
       repos.value.map(_.\("full_name").as[String]) must contain (ownerRepo)
       val deleteResult = await(gitHub.deleteRepo(ownerRepo)(testToken1))
