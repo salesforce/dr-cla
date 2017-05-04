@@ -87,7 +87,9 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
     val maybeClaSignatureFuture = for {
       encGitHubToken <- request.body.get("encGitHubToken").flatMap(_.headOption)
       claVersion <- claVersions.find(request.body.get("claVersion").flatMap(_.headOption).contains)
-      fullName <- request.body.get("fullName").flatMap(_.headOption)
+      fullName <- request.body.get("fullName").flatMap(_.headOption).filter(_.nonEmpty)
+      (maybeFirstName, maybeLastName) = Contact.fullNameToFirstAndLast(fullName)
+      lastName <- maybeLastName
       email <- request.body.get("email").flatMap(_.headOption)
       agreeToCLA <- request.body.get("agreeToCLA").flatMap(_.headOption)
     } yield {
@@ -99,8 +101,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
             username = (userInfo \ "login").as[String]
             maybeContact <- db.query(GetContactByGitHubId(username))
             contact = maybeContact.getOrElse {
-              val (firstName, lastName) = Contact.fullNameToFirstAndLast(fullName)
-              Contact(-1, firstName, lastName, email, username)
+              Contact(-1, maybeFirstName, lastName, email, username)
             }
           } yield ClaSignature(-1, contact, new LocalDateTime(), claVersion)
         } else {

@@ -30,31 +30,35 @@
 
 package models
 
-import jdub.async.{FlatSingleRowQuery, Query, Row, Statement}
+import jdub.async.{FlatSingleRowQuery, Row, Statement}
 
-case class Contact(id: Int, firstName: String, lastName: String, email: String, gitHubId: String)
+// note: gitHubId is nullable in the DB but we only ever query for contacts with githubids, so we make it non-nullable here
+case class Contact(id: Int, firstName: Option[String], lastName: String, email: String, gitHubId: String)
 
 object Contact {
 
-  def fullNameToFirstAndLast(fullName: String): (String, String) = {
-    val parts = fullName.split("\\s").reverse
-    (parts.tail.reverse.mkString(" "), parts.head)
+  def fullNameToFirstAndLast(fullName: String): (Option[String], Option[String]) = {
+    if (fullName.isEmpty) {
+      (None, None)
+    }
+    else if (!fullName.contains(" ")) {
+      (None, Some(fullName))
+    }
+    else {
+      val parts = fullName.split("\\s").reverse
+      (Some(parts.tail.reverse.mkString(" ")), Some(parts.head))
+    }
   }
 
   def rowToContact(row: Row): Contact = {
     val id = row.as[Int]("id")
-    val firstName = row.as[String]("firstname")
+    val firstName = row.asOpt[String]("firstname")
     val lastName = row.as[String]("lastname")
     val email = row.as[String]("email")
     val gitHubId = row.as[String]("sf_cla__github_id__c")
     Contact(id, firstName, lastName, email, gitHubId)
   }
 
-}
-
-case object GetContacts extends Query[Seq[Contact]] {
-  override val sql = "SELECT id, firstname, lastname, email, sf_cla__github_id__c FROM salesforce.Contact"
-  override def reduce(rows: Iterator[Row]) = rows.map(Contact.rowToContact).toSeq
 }
 
 case class GetContactByGitHubId(gitHubId: String) extends FlatSingleRowQuery[Contact] {

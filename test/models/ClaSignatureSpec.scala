@@ -55,7 +55,7 @@ class ClaSignatureSpec extends PlaySpec with OneAppPerSuite {
 
   "ClaSignature" must {
     "be creatable" in {
-      val contact = Contact(-1, "foo", "bar", "foo@bar.com", "foobar")
+      val contact = Contact(-1, Some("foo"), "bar", "foo@bar.com", "foobar")
       await(db.execute(CreateContact(contact)))
       val numRows = await(db.execute(CreateClaSignature(ClaSignature(-1, contact, new LocalDateTime(), "0.0.0"))))
       numRows mustEqual 1
