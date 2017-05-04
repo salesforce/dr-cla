@@ -82,7 +82,7 @@ Run the Tests
 
 1. You will need two GitHub testing users.  For each, [create a personal access token](https://github.com/settings/tokens) with the following permissions: `admin:org, admin:org_hook, admin:public_key, admin:repo_hook, delete_repo, repo, user`
 
-1. For user one, create a new testing organization (because this can't be done via the API).  Add the integration user as a member of this org.
+1. For user one, create a new testing organization (because this can't be done via the API).  Add the second user as a member of this org.
 
 1. For user one, install the Integration into the user's account and into the testing org.
 
