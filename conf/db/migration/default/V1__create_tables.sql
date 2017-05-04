@@ -5,10 +5,10 @@ DROP TABLE IF EXISTS salesforce.Contact;
 
 CREATE TABLE salesforce.Contact (
   id SERIAL PRIMARY KEY,
-  firstname VARCHAR NOT NULL,
+  firstname VARCHAR,
   lastname VARCHAR NOT NULL,
   email VARCHAR NOT NULL,
-  sf_cla__github_id__c VARCHAR NOT NULL UNIQUE
+  sf_cla__github_id__c VARCHAR UNIQUE
 );
 
 CREATE TABLE salesforce.sf_cla__CLA_Signature__c (

@@ -97,55 +97,67 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
   lazy val testIntegrationToken = (await(gitHub.installationAccessTokens(testIntegrationInstallationId)) \ "token").as[String]
   lazy val testIntegrationTokenOrg = (await(gitHub.installationAccessTokens(testIntegrationInstallationIdOrg)) \ "token").as[String]
 
+  val maxTries = 10
+
   // Poll until the repo has commits - So much gross
   @tailrec
-  private def waitForRepo(ownerRepo: String, token: String) {
+  private def waitForRepo(ownerRepo: String, token: String, tryNum: Int = 0) {
     val repo = Try(await(gitHub.repo(ownerRepo)(token)))
 
-    if (repo.isFailure) {
+    if (repo.isFailure && (tryNum < maxTries)) {
       Thread.sleep(1000)
-      waitForRepo(ownerRepo, token)
+      waitForRepo(ownerRepo, token, tryNum + 1)
     }
   }
 
   @tailrec
-  private def waitForCommits(ownerRepo: String, token: String) {
+  private def waitForCommits(ownerRepo: String, token: String, tryNum: Int = 0) {
     val repoCommits = Try(await(gitHub.repoCommits(ownerRepo, token))).getOrElse(JsArray())
 
-    if (repoCommits.value.isEmpty) {
+    if (repoCommits.value.isEmpty && (tryNum < maxTries)) {
       Thread.sleep(1000)
-      waitForCommits(ownerRepo, token)
+      waitForCommits(ownerRepo, token, tryNum + 1)
     }
   }
 
   @tailrec
-  private def waitForCommit(ownerRepo: String, sha: String, token: String) {
+  private def waitForCommit(ownerRepo: String, sha: String, token: String, tryNum: Int = 0) {
     val repoCommit = Try(await(gitHub.repoCommit(ownerRepo, sha, token)))
 
-    if (repoCommit.isFailure) {
+    if (repoCommit.isFailure && (tryNum < maxTries)) {
       Thread.sleep(1000)
-      waitForCommit(ownerRepo, sha, token)
+      waitForCommit(ownerRepo, sha, token, tryNum + 1)
     }
   }
 
   @tailrec
-  private def waitForFileToBeReady(ownerRepo: String, path: String, ref: String, accessToken: String): Unit = {
+  private def waitForFileToBeReady(ownerRepo: String, path: String, ref: String, accessToken: String, tryNum: Int = 0): Unit = {
     val file = Try(await(gitHub.getFile(ownerRepo, path, Some(ref))(accessToken)))
 
-    if (file.isFailure) {
+    if (file.isFailure && (tryNum < maxTries)) {
       Thread.sleep(1000)
-      waitForFileToBeReady(ownerRepo, path, ref, accessToken)
+      waitForFileToBeReady(ownerRepo, path, ref, accessToken, tryNum + 1)
     }
   }
 
   @tailrec
-  private def waitForPullRequest(ownerRepo: String, prNumber: Int, accessToken: String): Unit = {
+  private def waitForPullRequest(ownerRepo: String, prNumber: Int, accessToken: String, tryNum: Int = 0): Unit = {
 
     val pr = Try(await(gitHub.getPullRequest(ownerRepo, prNumber, accessToken)))
 
-    if (pr.isFailure) {
+    if (pr.isFailure && (tryNum < maxTries)) {
       Thread.sleep(1000)
-      waitForPullRequest(ownerRepo, prNumber, accessToken)
+      waitForPullRequest(ownerRepo, prNumber, accessToken, tryNum + 1)
+    }
+  }
+
+  @tailrec
+  private def waitForCommitState(ownerRepo: String, sha: String, state: String, accessToken: String, tryNum: Int = 0): Unit = {
+    val status = Try(await(gitHub.commitStatus(ownerRepo, sha, accessToken))).getOrElse(Json.obj())
+
+    if (!(status \ "state").asOpt[String].contains(state) && (tryNum < maxTries)) {
+      Thread.sleep(1000)
+      waitForCommitState(ownerRepo, sha, state, accessToken, tryNum + 1)
     }
   }
 
@@ -155,6 +167,7 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
     val ownerRepo = (createRepoResult \ "full_name").as[String]
 
     waitForCommits(ownerRepo, testToken1)
+    waitForCommits(ownerRepo, testToken2)
 
     ownerRepo
   }
@@ -165,16 +178,16 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
     val ownerRepo = (createRepoResult \ "full_name").as[String]
 
     waitForCommits(ownerRepo, testToken1)
+    waitForCommits(ownerRepo, testToken2)
 
     ownerRepo
   }
 
   private def createFork(): String = {
-    waitForCommits(testRepo1, testToken2)
-
     val forkResult = await(gitHub.forkRepo(testRepo1)(testToken2))
     val forkOwnerRepo = (forkResult \ "full_name").as[String]
 
+    waitForCommits(forkOwnerRepo, testToken1)
     waitForCommits(forkOwnerRepo, testToken2)
 
     forkOwnerRepo
@@ -210,6 +223,7 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
 
     val sha = (commits.value.head \ "sha").as[String]
 
+    waitForFileToBeReady(testFork, "README.md", sha, testToken1)
     waitForFileToBeReady(testFork, "README.md", sha, testToken2)
 
     val newContents = Random.alphanumeric.take(32).mkString
@@ -218,12 +232,14 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
     val editResult = await(gitHub.editFile(testFork, "README.md", newContents, "Updated", readmeSha)(testToken2))
     (editResult \ "commit").asOpt[JsObject] must be ('defined)
     val editSha = (editResult \ "commit" \ "sha").as[String]
+    waitForCommit(testFork, editSha, testToken1)
     waitForCommit(testFork, editSha, testToken2)
 
-    // testToken2 create PR to testToken1
+    // testToken2 create PR to testRepo1
     val externalPullRequest = await(gitHub.createPullRequest(testRepo1, "Updates", s"$testLogin2:master", "master", testToken2))
     (externalPullRequest \ "id").asOpt[Int] must be ('defined)
     val prNumber = (externalPullRequest \ "number").as[Int]
+    waitForPullRequest(testRepo1, prNumber, testToken1)
     waitForPullRequest(testRepo1, prNumber, testToken2)
 
     Json.obj("pull_request" -> externalPullRequest)
@@ -240,20 +256,29 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
     val sha = (commits.value.head \ "sha").as[String]
 
     waitForFileToBeReady(testRepo1, "README.md", sha, testToken1)
+    waitForFileToBeReady(testRepo1, "README.md", sha, testToken2)
 
     val newBranch = await(gitHub.createBranch(testRepo1, newBranchName, sha, testToken1))
 
     waitForFileToBeReady(testRepo1, "README.md", newBranchName, testToken1)
+    waitForFileToBeReady(testRepo1, "README.md", newBranchName, testToken2)
 
     val internalEditResult = await(gitHub.editFile(testRepo1, "README.md", newContents, "Updated", readmeSha, Some(newBranchName))(testToken1))
     (internalEditResult \ "commit").asOpt[JsObject] must be ('defined)
     val editSha = (internalEditResult \ "commit" \ "sha").as[String]
+
     waitForCommit(testRepo1, editSha, testToken1)
+    waitForCommit(testRepo1, editSha, testToken2)
+
+    // wtf: sometimes we just have to wait a little bit before we can make a PR.  caching.  arggggg
+    Thread.sleep(2000)
 
     val internalPullRequest = await(gitHub.createPullRequest(testRepo1, "Updates", newBranchName, "master", testToken1))
     (internalPullRequest \ "id").asOpt[Int] must be ('defined)
     val prNumber = (internalPullRequest \ "number").as[Int]
+
     waitForPullRequest(testRepo1, prNumber, testToken1)
+    waitForPullRequest(testRepo1, prNumber, testToken2)
 
     internalPullRequest
   }
@@ -261,7 +286,7 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
   lazy val testInternalPullRequest = Json.obj("pull_request" -> createTestPullRequest())
 
 
-  lazy val testPullRequests = Map(testExternalPullRequest -> testToken1, testInternalPullRequest -> testToken1)
+  lazy val testPullRequests = Map(testExternalPullRequest -> testToken2, testInternalPullRequest -> testToken1)
 
   lazy val testExternalPullRequestOwnerRepo = (testExternalPullRequest \ "pull_request" \ "base" \ "repo" \ "full_name").as[String]
   lazy val testExternalPullRequestNum = (testExternalPullRequest \ "pull_request" \ "number").as[Int]
@@ -570,6 +595,8 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
     "include failure state pull requests" in {
       await(gitHub.createStatus(testRepo1, sha, "failure", "http://foo.com", "testing", "salesforce-cla", testToken1))
 
+      waitForCommitState(testRepo1, sha, "failure", testToken1)
+
       val pullRequestsToBeValidated = await(gitHub.pullRequestsToBeValidated(testLogin1))
       pullRequestsToBeValidated must not be empty
     }
@@ -623,7 +650,7 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
       val pullRequestsViaIntegration = Map(testExternalPullRequest -> testIntegrationToken)
 
       val validationResultsFuture = gitHub.validatePullRequests(pullRequestsViaIntegration, "http://asdf.com/") { _ =>
-        Future.successful(Set(ClaSignature(1, Contact(1, "Jon", "Doe", "jdoe@foo.com", testLogin2), new LocalDateTime(), "1.0")))
+        Future.successful(Set(ClaSignature(1, Contact(1, Some("Jon"), "Doe", "jdoe@foo.com", testLogin2), new LocalDateTime(), "1.0")))
       }
 
       val validationResults = await(validationResultsFuture)

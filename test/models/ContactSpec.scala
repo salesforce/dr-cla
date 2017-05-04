@@ -47,6 +47,7 @@ class ContactSpec extends PlaySpec with OneAppPerSuite {
   lazy val db = app.injector.instanceOf[Database]
   lazy val playInitializer = app.injector.instanceOf[PlayInitializer]
 
+  // todo: this doesn't seem to work
   await(db.raw("reset db", "drop schema salesforce cascade"))
   await(db.raw("reset db", "drop table schema_version"))
 
@@ -54,12 +55,12 @@ class ContactSpec extends PlaySpec with OneAppPerSuite {
 
   "Contact" must {
     "be creatable" in {
-      val numRows = await(db.execute(CreateContact(Contact(-1, "foo", "bar", "foo@bar.com", "foobar"))))
+      val numRows = await(db.execute(CreateContact(Contact(-1, Some("foo"), "bar", "foo@bar.com", "foobar"))))
       numRows mustEqual 1
     }
-    "be able to get all" in {
-      val contacts = await(db.query(GetContacts))
-      contacts.length mustBe > (0)
+    "be creatable with null firstname" in {
+      val numRows = await(db.execute(CreateContact(Contact(-1, None, "blah", "blah@blah.com", "blah"))))
+      numRows mustEqual 1
     }
     "be able to get one that exists by the gitHubId" in {
       val contact = await(db.query(GetContactByGitHubId("foobar")))
@@ -69,20 +70,25 @@ class ContactSpec extends PlaySpec with OneAppPerSuite {
       val contact = await(db.query(GetContactByGitHubId("asdf")))
       contact mustBe None
     }
+    "work with null firstname" in {
+      val contact = await(db.query(GetContactByGitHubId("blah")))
+      contact mustBe 'defined
+      contact.get.firstName mustBe empty
+    }
   }
 
   "Contact.fullNameToFirstAndLast" must {
     "work with no names" in {
-      Contact.fullNameToFirstAndLast("") must equal ("", "")
+      Contact.fullNameToFirstAndLast("") must equal (None, None)
     }
     "work with one name" in {
-      Contact.fullNameToFirstAndLast("Foo") must equal ("", "Foo")
+      Contact.fullNameToFirstAndLast("Foo") must equal (None, Some("Foo"))
     }
     "work with two names" in {
-      Contact.fullNameToFirstAndLast("Foo Bar") must equal ("Foo", "Bar")
+      Contact.fullNameToFirstAndLast("Foo Bar") must equal (Some("Foo"), Some("Bar"))
     }
     "work with three names" in {
-      Contact.fullNameToFirstAndLast("Foo Baz Bar") must equal ("Foo Baz", "Bar")
+      Contact.fullNameToFirstAndLast("Foo Baz Bar") must equal (Some("Foo Baz"), Some("Bar"))
     }
   }
 
