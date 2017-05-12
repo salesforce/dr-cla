@@ -213,8 +213,8 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     }
   }
 
-  def getPullRequest(ownerRepo: String, pullRequestId: Int, accessToken: String): Future[JsValue] = {
-    val path = s"repos/$ownerRepo/pulls/$pullRequestId"
+  def getPullRequest(ownerRepo: String, pullRequestNum: Int, accessToken: String): Future[JsValue] = {
+    val path = s"repos/$ownerRepo/pulls/$pullRequestNum"
     ws(path, accessToken).get().flatMap(okT[JsValue])
   }
 
@@ -244,8 +244,8 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     ws(path, accessToken).post(json).flatMap(createdT[JsObject])
   }
 
-  def pullRequestCommits(ownerRepo: String, pullRequestId: Int, accessToken: String): Future[JsArray] = {
-    val path = s"repos/$ownerRepo/pulls/$pullRequestId/commits"
+  def pullRequestCommits(ownerRepo: String, pullRequestNum: Int, accessToken: String): Future[JsArray] = {
+    val path = s"repos/$ownerRepo/pulls/$pullRequestNum/commits"
 
     ws(path, accessToken).get().flatMap(okT[JsArray])
   }
@@ -491,12 +491,8 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   private def pullRequestHasContributorAndState(contributorId: String, state: String)(pullRequest: JsObject): Boolean = {
     val contributors = (pullRequest \ "commits").as[JsArray].value.map(commitAuthor)
     val prState = (pullRequest \ "status" \ "state").as[String]
-    contributors.contains(contributorId) && (state == prState)
-  }
 
-  def isUserPullRequest(pullRequest: JsValue): Boolean = {
-    val userType = (pullRequest \ "user" \ "type").as[String]
-    userType == "User"
+    contributors.contains(contributorId) && (state == prState)
   }
 
   def isOpenPullRequest(pullRequest: JsValue): Boolean = {
@@ -505,7 +501,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   }
 
   def pullRequestsToValidate(pullRequest: JsValue, accessToken: String): Future[Map[JsObject, String]] = {
-    if (isUserPullRequest(pullRequest) && isOpenPullRequest(pullRequest)) {
+    if (isOpenPullRequest(pullRequest)) {
       pullRequestWithCommitsAndStatus(accessToken)(pullRequest).map { pullRequestDetails =>
         Map(pullRequestDetails -> accessToken)
       }
@@ -521,8 +517,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
 
     for {
       allPullRequests <- Future.sequence(repoNames.map(ownerRepo => pullRequests(ownerRepo, accessToken, Some("open"))))
-      onlyUserPullRequests = allPullRequests.flatMap(_.value).filter(isUserPullRequest)
-      pullRequestWithCommitsAndStatus <- Future.sequence(onlyUserPullRequests.map(pullRequestWithCommitsAndStatus(accessToken)))
+      pullRequestWithCommitsAndStatus <- Future.sequence(allPullRequests.flatMap(_.value).map(pullRequestWithCommitsAndStatus(accessToken)))
     } yield pullRequestWithCommitsAndStatus.filter(pullRequestHasContributorAndState(signerGitHubId, "failure")).map { pullRequest =>
       pullRequest -> accessToken
     }.toMap
@@ -553,12 +548,18 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     } yield pullRequests.flatten.toMap
   }
 
-  def pullRequestCommitters(ownerRepo: String, prNumber: Int, sha: String, accessToken: String): Future[Set[String]] = {
+  def pullRequestUserCommitters(ownerRepo: String, prNumber: Int, sha: String, accessToken: String): Future[Set[String]] = {
     val prCommitsFuture = pullRequestCommits(ownerRepo, prNumber, accessToken)
 
     prCommitsFuture.flatMap { commits =>
-      val commitsWithMaybeLogins = commits.value.map { commit =>
+      val onlyUserCommits = commits.value.filterNot { commit =>
+        val maybeAuthorType = (commit \ "author" \ "type").asOpt[String]
+        maybeAuthorType.contains("Bot")
+      }
+
+      val commitsWithMaybeLogins = onlyUserCommits.map { commit =>
         val maybeAuthorLogin = (commit \ "author" \ "login").asOpt[String]
+
         maybeAuthorLogin.fold {
           val author = (commit \ "commit" \ "author").as[JsObject]
           Future.failed[String](GitHub.AuthorLoginNotFound(sha, author))
@@ -594,7 +595,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   }
 
   def externalContributorsForPullRequest(ownerRepo: String, prNumber: Int, sha: String, accessToken: String): Future[Set[String]] = {
-    val pullRequestCommittersFuture = pullRequestCommitters(ownerRepo, prNumber, sha, accessToken)
+    val pullRequestCommittersFuture = pullRequestUserCommitters(ownerRepo, prNumber, sha, accessToken)
     val collaboratorsFuture = collaborators(ownerRepo, accessToken)
 
     for {

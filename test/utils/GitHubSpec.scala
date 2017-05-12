@@ -108,6 +108,9 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
       Thread.sleep(1000)
       waitForRepo(ownerRepo, token, tryNum + 1)
     }
+    else if (tryNum >= maxTries) {
+      throw new Exception("max tries reached")
+    }
   }
 
   @tailrec
@@ -117,6 +120,9 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
     if (repoCommits.value.isEmpty && (tryNum < maxTries)) {
       Thread.sleep(1000)
       waitForCommits(ownerRepo, token, tryNum + 1)
+    }
+    else if (tryNum >= maxTries) {
+      throw new Exception("max tries reached")
     }
   }
 
@@ -128,6 +134,9 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
       Thread.sleep(1000)
       waitForCommit(ownerRepo, sha, token, tryNum + 1)
     }
+    else if (tryNum >= maxTries) {
+      throw new Exception("max tries reached")
+    }
   }
 
   @tailrec
@@ -137,6 +146,9 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
     if (file.isFailure && (tryNum < maxTries)) {
       Thread.sleep(1000)
       waitForFileToBeReady(ownerRepo, path, ref, accessToken, tryNum + 1)
+    }
+    else if (tryNum >= maxTries) {
+      throw new Exception("max tries reached")
     }
   }
 
@@ -149,6 +161,9 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
       Thread.sleep(1000)
       waitForPullRequest(ownerRepo, prNumber, accessToken, tryNum + 1)
     }
+    else if (tryNum >= maxTries) {
+      throw new Exception("max tries reached")
+    }
   }
 
   @tailrec
@@ -158,6 +173,24 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
     if (!(status \ "state").asOpt[String].contains(state) && (tryNum < maxTries)) {
       Thread.sleep(1000)
       waitForCommitState(ownerRepo, sha, state, accessToken, tryNum + 1)
+    }
+    else if (tryNum >= maxTries) {
+      throw new Exception("max tries reached")
+    }
+  }
+
+  @tailrec
+  private def waitForPullRequestToHaveSha(ownerRepo: String, prNumber: Int, sha: String, accessToken: String, tryNum: Int = 0): Unit = {
+    val pullRequest = Try(await(gitHub.getPullRequest(ownerRepo, prNumber, accessToken))).getOrElse(Json.obj())
+
+    val prSha = (pullRequest \ "head" \ "sha").as[String]
+
+    if (prSha != sha && (tryNum < maxTries)) {
+      Thread.sleep(1000)
+      waitForPullRequestToHaveSha(ownerRepo, prNumber, sha, accessToken, tryNum + 1)
+    }
+    else if (tryNum >= maxTries) {
+      throw new Exception("max tries reached")
     }
   }
 
@@ -205,7 +238,7 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
   lazy val testFork = createFork()
   lazy val testOrgRepo = createOrgRepo(testOrg)
 
-  lazy val testExternalPullRequest = {
+  def createTestExternalPullRequest() = {
     val testRepos2 = await(gitHub.userRepos(testLogin2, testToken2))
 
     // make sure testToken2 does not have access to the upstream repo
@@ -242,14 +275,17 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
     waitForPullRequest(testRepo1, prNumber, testToken1)
     waitForPullRequest(testRepo1, prNumber, testToken2)
 
-    Json.obj("pull_request" -> externalPullRequest)
+    externalPullRequest
   }
 
-  def createTestPullRequest() = {
+  lazy val testExternalPullRequest = Json.obj("pull_request" -> createTestExternalPullRequest())
+
+
+  def createTestInternalPullRequest() = {
     val newContents = Random.alphanumeric.take(32).mkString
     val newBranchName = Random.alphanumeric.take(8).mkString
 
-    val readmeSha = (await(gitHub.getFile(testRepo1, "README.md")(testToken1)) \ "sha").as[String]
+    val readmeSha1 = (await(gitHub.getFile(testRepo1, "README.md")(testToken1)) \ "sha").as[String]
 
     val commits = await(gitHub.repoCommits(testRepo1, testToken1))
 
@@ -263,15 +299,13 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
     waitForFileToBeReady(testRepo1, "README.md", newBranchName, testToken1)
     waitForFileToBeReady(testRepo1, "README.md", newBranchName, testToken2)
 
-    val internalEditResult = await(gitHub.editFile(testRepo1, "README.md", newContents, "Updated", readmeSha, Some(newBranchName))(testToken1))
-    (internalEditResult \ "commit").asOpt[JsObject] must be ('defined)
-    val editSha = (internalEditResult \ "commit" \ "sha").as[String]
+    val internalEditResult1 = await(gitHub.editFile(testRepo1, "README.md", newContents, "Updated", readmeSha1, Some(newBranchName))(testToken1))
+    (internalEditResult1 \ "commit").asOpt[JsObject] must be ('defined)
+    val editSha1 = (internalEditResult1 \ "commit" \ "sha").as[String]
 
-    waitForCommit(testRepo1, editSha, testToken1)
-    waitForCommit(testRepo1, editSha, testToken2)
+    waitForCommitState(testRepo1, editSha1, "pending", testToken1)
 
-    // wtf: sometimes we just have to wait a little bit before we can make a PR.  caching.  arggggg
-    Thread.sleep(2000)
+    val readmeSha2 = (await(gitHub.getFile(testRepo1, "README.md", Some(newBranchName))(testToken1)) \ "sha").as[String]
 
     val internalPullRequest = await(gitHub.createPullRequest(testRepo1, "Updates", newBranchName, "master", testToken1))
     (internalPullRequest \ "id").asOpt[Int] must be ('defined)
@@ -280,10 +314,15 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
     waitForPullRequest(testRepo1, prNumber, testToken1)
     waitForPullRequest(testRepo1, prNumber, testToken2)
 
-    internalPullRequest
+    val internalEditResult2 = await(gitHub.editFile(testRepo1, "README.md", "updated by bot", "updated by bot", readmeSha2, Some(newBranchName))(testIntegrationToken))
+    val editSha2 = (internalEditResult2 \ "commit" \ "sha").as[String]
+
+    waitForPullRequestToHaveSha(testRepo1, prNumber, editSha2, testToken1)
+
+    await(gitHub.getPullRequest(testRepo1, prNumber, testToken1))
   }
 
-  lazy val testInternalPullRequest = Json.obj("pull_request" -> createTestPullRequest())
+  lazy val testInternalPullRequest = Json.obj("pull_request" -> createTestInternalPullRequest())
 
 
   lazy val testPullRequests = Map(testExternalPullRequest -> testToken2, testInternalPullRequest -> testToken1)
@@ -441,11 +480,6 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
       val pullRequestsToValidate = await(gitHub.pullRequestsToValidate(closedPullRequest, testIntegrationToken))
       pullRequestsToValidate must be (empty)
     }
-    "not include bot pull requests" in {
-      val botPullRequest = testPullRequest + ("user" -> Json.obj("type" -> "Bot"))
-      val pullRequestsToValidate = await(gitHub.pullRequestsToValidate(botPullRequest, testIntegrationToken))
-      pullRequestsToValidate must be (empty)
-    }
   }
 
   "GitHub.commitStatus" must {
@@ -583,8 +617,9 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
     }
   }
 
+  // note that ordering is important here because we validate the same PR multiple times
   "GitHub.pullRequestsToBeValidated" must {
-    lazy val pullRequest = createTestPullRequest()
+    lazy val pullRequest = createTestInternalPullRequest()
     lazy val sha = (pullRequest \ "head" \ "sha").as[String]
     lazy val number = (pullRequest \ "number").as[Int]
 
@@ -608,10 +643,10 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
     }
   }
 
-  "GitHub.pullRequestCommitters" must {
+  "GitHub.pullRequestUserCommitters" must {
     "work" in {
-      val pullRequestCommitters = await(gitHub.pullRequestCommitters(testInternalPullRequestOwnerRepo, testInternalPullRequestNum, testInternalPullRequestSha, testIntegrationToken))
-      pullRequestCommitters must equal (Set(testLogin1))
+      val pullRequestUserCommitters = await(gitHub.pullRequestUserCommitters(testInternalPullRequestOwnerRepo, testInternalPullRequestNum, testInternalPullRequestSha, testIntegrationToken))
+      pullRequestUserCommitters must equal (Set(testLogin1))
     }
     "fail with non-github user contributors" in {
       // todo: but hard to simulate
@@ -622,13 +657,13 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
   "GitHub.externalContributorsForPullRequest" must {
     "not include repo collaborators" in {
       val externalContributors = await(gitHub.externalContributorsForPullRequest(testInternalPullRequestOwnerRepo, testInternalPullRequestNum, testInternalPullRequestSha, testIntegrationToken))
-      externalContributors must be ('empty)
+      externalContributors must be ('empty) // todo: not include the internal user
     }
   }
 
   // note that ordering is important here because we validate the same PR multiple times
   "GitHub.validatePullRequests" must {
-    "work with integrations for pull requests with only internal contributors" in {
+    "work with integrations for pull requests with only internal contributors and/or bots" in {
       val pullRequestsViaIntegration = Map(testInternalPullRequest -> testIntegrationToken)
 
       val validationResultsFuture = gitHub.validatePullRequests(pullRequestsViaIntegration, "http://asdf.com/") { _ =>
