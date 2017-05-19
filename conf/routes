@@ -2,6 +2,8 @@
 # This file defines all application routes (Higher priority routes first)
 # ~~~~
 
+GET         /                                controllers.Application.index
+
 GET         /sign-cla                        controllers.Application.signCla
 POST        /sign-cla                        controllers.Application.submitCla
 

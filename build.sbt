@@ -27,8 +27,6 @@ libraryDependencies ++= Seq(
   "org.webjars"            %  "octicons"                           % "3.1.0",
   "org.webjars.bower"      %  "signature_pad"                      % "1.5.1",
 
-  "javax.mail"             %  "mail"                               % "1.4",
-
   "org.scalatestplus.play" %% "scalatestplus-play"                 % "2.0.0" % "test"
 )
 

@@ -30,58 +30,90 @@
 
 package utils
 
+import java.time.Instant
+
+import akka.actor.ActorSystem
+import akka.stream.ActorMaterializer
 import ch.qos.logback.classic.filter.ThresholdFilter
-import ch.qos.logback.classic.{Level, LoggerContext, PatternLayout}
-import ch.qos.logback.classic.net.SMTPAppender
+import ch.qos.logback.classic.{Level, LoggerContext}
+import ch.qos.logback.classic.spi.ILoggingEvent
+import ch.qos.logback.core.AppenderBase
 import org.slf4j.LoggerFactory
 import play.api.Environment
+import play.api.http.HeaderNames
+import play.api.libs.json.{JsString, Json}
 import play.api.libs.logback.LogbackLoggerConfigurator
+import play.api.libs.ws.ahc.AhcWSClient
+
 
 class LoggerConfigurator extends LogbackLoggerConfigurator {
+
+  implicit lazy val actorSystem = ActorSystem()
+  implicit lazy val materializer = ActorMaterializer()
+  lazy val wsClient = AhcWSClient()
+  var maybePagerDutyAppender: Option[AppenderBase[_]] = None
 
   override def configure(env: Environment): Unit = {
     super.configure(env)
 
-    val ctx = LoggerFactory.getILoggerFactory.asInstanceOf[LoggerContext]
+    val maybePagerDutyToken = sys.env.get("PAGERDUTY_TOKEN")
+    val maybePagerDutyIntegrationKey = sys.env.get("PAGERDUTY_INTEGRATION_KEY")
 
-    val rootLogger = ctx.getLogger("ROOT")
-
-    val maybeSmtpServer = sys.env.get("POSTMARK_SMTP_SERVER")
-    val maybePostmarkApiToken = sys.env.get("POSTMARK_API_TOKEN")
-    val maybeErrorToEmail = sys.env.get("ERROR_TO_EMAIL")
-    val maybeErrorFromEmail = sys.env.get("ERROR_FROM_EMAIL")
-
-    (maybeSmtpServer, maybePostmarkApiToken, maybeErrorToEmail, maybeErrorFromEmail) match {
-      case (Some(smtpServer), Some(postmarkApiToken), Some(errorToEmail), Some(errorFromEmail)) =>
-        rootLogger.info("Will email errors to $errorEmail")
-
-        val pl = new PatternLayout()
-        pl.setContext(ctx)
-        pl.setPattern("%date %-5level %logger{35} - %message%n")
-        pl.start()
+    (maybePagerDutyToken, maybePagerDutyIntegrationKey) match {
+      case (Some(pagerDutyToken), Some(pagerDutyIntegrationKey)) =>
+        val ctx = LoggerFactory.getILoggerFactory.asInstanceOf[LoggerContext]
+        val rootLogger = ctx.getLogger("ROOT")
+        rootLogger.info("Errors will be sent to PagerDuty")
 
         val thresholdFilter = new ThresholdFilter()
-        thresholdFilter.setLevel(Level.ERROR.toString)
+        thresholdFilter.setLevel(Level.ERROR.levelStr)
+        thresholdFilter.setContext(ctx)
+        thresholdFilter.start()
 
-        val smtpAppender = new SMTPAppender()
-        smtpAppender.setContext(ctx)
-        smtpAppender.setLayout(pl)
-        smtpAppender.addFilter(thresholdFilter)
-        smtpAppender.setSubject("CLA Error: %logger{20} - %m")
-        smtpAppender.setSmtpHost(smtpServer)
-        smtpAppender.setUsername(postmarkApiToken)
-        smtpAppender.setPassword(postmarkApiToken)
-        smtpAppender.addTo(errorToEmail)
-        smtpAppender.setFrom(errorFromEmail)
-        smtpAppender.setSTARTTLS(true)
-        smtpAppender.setSSL(true)
-        smtpAppender.start()
+        val pagerDutyAppender = new AppenderBase[ILoggingEvent] {
 
-        rootLogger.addAppender(smtpAppender)
+          override def append(eventObject: ILoggingEvent): Unit = {
+
+            val json = Json.obj(
+              "routing_key" -> pagerDutyIntegrationKey,
+              "event_action" -> "trigger",
+              "dedup_key" -> ("salesforce-cla-" + eventObject.getTimeStamp),
+              "payload" -> Json.obj(
+                "summary" -> eventObject.getFormattedMessage,
+                "source" -> JsString(sys.env.getOrElse("HEROKU_DNS_APP_NAME", "salesforce-cla")),
+                "severity" -> "error",
+                "timestamp" -> Instant.ofEpochMilli(eventObject.getTimeStamp),
+                "custom_details" -> Json.obj(
+                  "logger-name" -> eventObject.getLoggerName,
+                  "thread-name" -> eventObject.getThreadName,
+                  "caller-data" -> eventObject.getCallerData.mkString("\n")
+                )
+              )
+            )
+
+            wsClient
+              .url("https://events.pagerduty.com/v2/enqueue")
+              .withHeaders(HeaderNames.AUTHORIZATION -> s"Token token=$pagerDutyToken")
+              .post(json)
+          }
+        }
+
+        pagerDutyAppender.setContext(ctx)
+        pagerDutyAppender.addFilter(thresholdFilter)
+        pagerDutyAppender.start()
+
+        rootLogger.addAppender(pagerDutyAppender)
+
+        maybePagerDutyAppender = Some(pagerDutyAppender)
       case _ =>
-        // yay side effects!
+        // yay side effects
     }
+  }
 
+  override def shutdown(): Unit = {
+    maybePagerDutyAppender.foreach(_.stop())
+    wsClient.close()
+    actorSystem.terminate()
   }
 
 }

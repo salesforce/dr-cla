@@ -54,6 +54,10 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
   val gitHubOauthScopesForClaSigning = Seq("user:email")
   val gitHubOauthScopesForAudit = Seq("read:org")
 
+  def index = Action {
+    Redirect("http://salesforce.github.io/")
+  }
+
   def wellKnown(key: String) = Action {
     configuration.getString("wellknown").fold(NotFound(EmptyContent())) { wellKnownKeyValue =>
       if (wellKnownKeyValue.startsWith(key + "=")) {
