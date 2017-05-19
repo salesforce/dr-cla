@@ -6,7 +6,7 @@ name := "salesforce-cla"
 
 version := "1.0-SNAPSHOT"
 
-scalaVersion := "2.11.8"
+scalaVersion := "2.11.11"
 
 resolvers ++= Seq(Resolver.mavenLocal, Resolver.jcenterRepo)
 
@@ -14,7 +14,7 @@ libraryDependencies ++= Seq(
   ws,
   filters,
 
-  "com.pauldijou"          %% "jwt-play-json"                      % "0.9.2",
+  "com.pauldijou"          %% "jwt-play-json"                      % "0.12.1",
 
   "org.postgresql"         %  "postgresql"                         % "9.4-1203-jdbc42",
   "org.flywaydb"           %% "flyway-play"                        % "3.0.0",

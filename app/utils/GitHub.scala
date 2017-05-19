@@ -40,6 +40,7 @@ import org.apache.commons.codec.binary.Base64
 import org.bouncycastle.openssl.jcajce.JcaPEMKeyConverter
 import org.bouncycastle.openssl.{PEMKeyPair, PEMParser}
 import pdi.jwt.{JwtAlgorithm, JwtClaim, JwtJson}
+import pdi.jwt.JwtJson._
 import play.api.Configuration
 import play.api.http.{HeaderNames, MimeTypes, Status}
 import play.api.i18n.MessagesApi
