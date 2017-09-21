@@ -33,6 +33,7 @@ package utils
 import java.io.StringReader
 import java.net.URL
 import java.security.KeyPair
+import java.util.Locale
 import javax.inject.Inject
 
 import models.ClaSignature
@@ -42,12 +43,11 @@ import org.bouncycastle.openssl.{PEMKeyPair, PEMParser}
 import pdi.jwt.{JwtAlgorithm, JwtClaim, JwtJson}
 import pdi.jwt.JwtJson._
 import play.api.Configuration
-import play.api.http.{HeaderNames, MimeTypes, Status}
-import play.api.i18n.MessagesApi
+import play.api.http.{HeaderNames, HttpVerbs, MimeTypes, Status}
+import play.api.i18n.{Lang, MessagesApi}
 import play.api.libs.json.Reads._
 import play.api.libs.json._
 import play.api.libs.ws.{WSClient, WSRequest, WSResponse}
-import play.api.mvc.Results.EmptyContent
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.language.implicitConversions
@@ -55,14 +55,16 @@ import scala.util.Try
 
 class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi: MessagesApi) (implicit ec: ExecutionContext) {
 
-  val clientId = configuration.getString("github.oauth.client-id").get
-  val clientSecret = configuration.getString("github.oauth.client-secret").get
+  implicit val defaultLang: Lang = Lang(Locale.getDefault)
 
-  val integrationId = configuration.getString("github.integration.id").get
-  val integrationSlug = configuration.getString("github.integration.slug").get
+  val clientId = configuration.get[String]("github.oauth.client-id")
+  val clientSecret = configuration.get[String]("github.oauth.client-secret")
+
+  val integrationId = configuration.get[String]("github.integration.id")
+  val integrationSlug = configuration.get[String]("github.integration.slug")
 
   val integrationKeyPair: KeyPair = {
-    val privateKeyString = configuration.getString("github.integration.private-key").get
+    val privateKeyString = configuration.get[String]("github.integration.private-key")
 
     val stringReader = new StringReader(privateKeyString)
 
@@ -73,25 +75,25 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     new JcaPEMKeyConverter().getKeyPair(pemObject.asInstanceOf[PEMKeyPair])
   }
 
-  val maybeIntegrationSecretToken = configuration.getString("github.integration.secret-token")
+  val maybeIntegrationSecretToken = configuration.getOptional[String]("github.integration.secret-token")
 
   val labels: Map[String, String] = Map(("cla:missing", "c40d0d"), ("cla:signed", "5ebc41"))
 
   def ws(path: String, accessToken: String): WSRequest = {
     ws
       .url(s"https://api.github.com/$path")
-      .withHeaders(
+      .withHttpHeaders(
         HeaderNames.AUTHORIZATION -> s"token $accessToken",
         HeaderNames.ACCEPT -> "application/vnd.github.machine-man-preview+json"
       )
   }
 
   def accessToken(code: String): Future[String] = {
-    val wsFuture = ws.url("https://github.com/login/oauth/access_token").withQueryString(
+    val wsFuture = ws.url("https://github.com/login/oauth/access_token").withQueryStringParameters(
       "client_id" -> clientId,
       "client_secret" -> clientSecret,
       "code" -> code
-    ).withHeaders(HeaderNames.ACCEPT -> MimeTypes.JSON).post(EmptyContent())
+    ).withHttpHeaders(HeaderNames.ACCEPT -> MimeTypes.JSON).execute(HttpVerbs.POST)
 
     wsFuture.flatMap { response =>
       (response.json \ "access_token").asOpt[String].fold {
@@ -112,7 +114,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     val jwt = jwtEncode(claim)
 
     val wsRequest = ws.url(s"https://api.github.com/$path")
-      .withHeaders(
+      .withHttpHeaders(
         HeaderNames.AUTHORIZATION -> s"Bearer $jwt",
         HeaderNames.ACCEPT -> "application/vnd.github.machine-man-preview+json"
       )
@@ -135,7 +137,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     }
 
     def req(path: String, accessToken: String, page: Int, pageSize: Int): Future[WSResponse] = {
-      ws(path, accessToken).withQueryString("page" -> page.toString, "per_page" -> pageSize.toString).get()
+      ws(path, accessToken).withQueryStringParameters("page" -> page.toString, "per_page" -> pageSize.toString).get()
     }
 
     // get the first page
@@ -158,7 +160,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
       val pagesFutures = pages.map(req(path, accessToken, _, pageSize).map(_.json.as[JsArray]))
 
       // assume numeric paging so we can parallelize
-      Future.fold(pagesFutures)(firstPageRepos)(_ ++ _)
+      Future.foldLeft(pagesFutures)(firstPageRepos)(_ ++ _)
     }
   }
 
@@ -166,7 +168,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   private def userOrOrgRepos(userOrOrg: Either[String, String], accessToken: String, pageSize: Int): Future[JsArray] = {
 
     val path = userOrOrg match {
-      case Left(user) => s"user/repos"
+      case Left(_) => s"user/repos"
       case Right(org) => s"orgs/$org/repos"
     }
 
@@ -202,7 +204,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
 
   def userMembershipOrgs(maybeState: Option[String], accessToken: String): Future[JsArray] = {
     val maybeParams = maybeState.map(state => Seq("state" -> state)).getOrElse(Seq.empty[(String, String)])
-    ws("user/memberships/orgs", accessToken).withQueryString(maybeParams:_*).get().flatMap(okT[JsArray])
+    ws("user/memberships/orgs", accessToken).withQueryStringParameters(maybeParams:_*).get().flatMap(okT[JsArray])
   }
 
   def userInfo(accessToken: String): Future[JsValue] = {
@@ -223,7 +225,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   def pullRequests(ownerRepo: String, accessToken: String, filterState: Option[String] = None): Future[JsArray] = {
     val path = s"repos/$ownerRepo/pulls"
     val params = filterState.fold(Map.empty[String, String])(state => Map("state" -> state)).toSeq
-    ws(path, accessToken).withQueryString(params:_*).get().flatMap { response =>
+    ws(path, accessToken).withQueryStringParameters(params:_*).get().flatMap { response =>
       response.status match {
         // sometimes GitHub says we have access to a repo, but it doesn't actually exist
         case Status.NOT_FOUND => Future.successful(JsArray())
@@ -437,13 +439,13 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   }
 
   def forkRepo(ownerRepo: String)(accessToken: String): Future[JsObject] = {
-    ws(s"repos/$ownerRepo/forks", accessToken).post(EmptyContent()).flatMap(statusT[JsObject](Status.ACCEPTED, _))
+    ws(s"repos/$ownerRepo/forks", accessToken).execute(HttpVerbs.POST).flatMap(statusT[JsObject](Status.ACCEPTED, _))
   }
 
   def getFile(ownerRepo: String, path: String, maybeRef: Option[String] = None)(accessToken: String): Future[JsObject] = {
     val queryString = maybeRef.fold(Map.empty[String, String])(ref => Map("ref" -> ref)).toSeq
 
-    ws(s"repos/$ownerRepo/contents/$path", accessToken).withQueryString(queryString:_*).get().flatMap(okT[JsObject])
+    ws(s"repos/$ownerRepo/contents/$path", accessToken).withQueryStringParameters(queryString:_*).get().flatMap(okT[JsObject])
   }
 
   def editFile(ownerRepo: String, path: String, contents: String, commitMessage: String, sha: String, maybeBranch: Option[String] = None)(accessToken: String): Future[JsObject] = {
@@ -477,7 +479,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   }
 
   def addCollaborator(ownerRepo: String, username: String, accessToken: String): Future[Unit] = {
-    ws(s"repos/$ownerRepo/collaborators/$username", accessToken).put(EmptyContent()).flatMap(nocontent)
+    ws(s"repos/$ownerRepo/collaborators/$username", accessToken).execute(HttpVerbs.PUT).flatMap(nocontent)
   }
 
   def createBranch(ownerRepo: String, name: String, sha: String, accessToken: String): Future[JsObject] = {
@@ -610,7 +612,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
       clasForCommitters <- clasForCommitters(externalContributors)
     } yield {
       // todo: maybe check latest CLA version
-      externalContributors.diff(clasForCommitters.map(_.contact.gitHubId))
+      externalContributors.diff(clasForCommitters.map(_.contactGitHubId))
     }
   }
 
@@ -754,14 +756,6 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
       val messageTry = Try((response.json \ "message").as[String])
       Future.failed(GitHub.IncorrectResponseStatus(statusCode, response.status, messageTry.getOrElse(response.body)))
     }
-  }
-
-  private def seqFutures[T, U](items: TraversableOnce[T])(f: T => Future[U]): Future[List[U]] = {
-    items.foldLeft(Future.successful[List[U]](Nil)) {
-      (futures, item) => futures.flatMap { values =>
-        f(item).map(_ :: values)
-      }
-    } map (_.reverse)
   }
 
 }

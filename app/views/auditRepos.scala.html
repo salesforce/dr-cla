@@ -28,13 +28,16 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *@
 
-@(org: String, repos: Seq[utils.GitHub.Repo], encAccessToken: String)(implicit staticWebJarAssets: StaticWebJarAssets)
+@this(webJarsUtil: org.webjars.play.WebJarsUtil, main: main)
+
+@(org: String, repos: Seq[utils.GitHub.Repo], encAccessToken: String)
 
 @repos.map { repo =>
     <div class="slds-media slds-tile">
         <div class="slds-media__figure">
-            <svg aria-hidden="true" class="slds-icon slds-icon-standard-canvas slds-timeline__icon"></svg>
-            <span class="octicon octicon-repo" style="margin-left: 10px;"></span>
+            <div class="slds-icon_container slds-icon-standard-canvas">
+                <span class="slds-icon slds-icon_small octicon octicon-repo"></span>
+            </div>
         </div>
         <div class="slds-media__body">
             <div class="slds-grid slds-grid--align-spread slds-has-flexi-truncate">
@@ -44,7 +47,7 @@
                 <div data-href="@routes.Application.auditContributors(org, repo.ownerRepo, encAccessToken)" data-autoload="false">
                     <button class="slds-button slds-button--brand slds-button--small">
                         Load Contributor CLA Statuses
-                        <img src="@staticWebJarAssets.locateUrl("assets/images/spinners/slds_spinner.gif")" alt="Loading..." class="slds-button__icon slds-button__icon--right" style="height: 1rem; display: none;" />
+                        @Html(webJarsUtil.img(webJarsUtil.url("slds_spinner.gif"), Map("alt" -> "Loading...", "class" -> "slds-button__icon slds-button__icon--right", "style" -> "height: 1rem; display: none;")))
                     </button>
                 </div>
             </div>

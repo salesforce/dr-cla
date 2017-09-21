@@ -28,28 +28,67 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-package models
+package utils
 
-import io.getquill.{Embedded, PostgresAsyncContext, SnakeCase}
+import javax.inject.Inject
+
+import models.{ClaSignature, Contact}
+import modules.Database
 
 import scala.concurrent.{ExecutionContext, Future}
 
+class DB @Inject()(database: Database)(implicit ec: ExecutionContext) {
 
-// note: gitHubId is nullable in the DB but we only ever query for contacts with githubids, so we make it non-nullable here
-case class Contact(id: Int, firstName: Option[String], lastName: String, email: String, gitHubId: String) extends Embedded
+  import database.ctx._
 
-object Contact {
-
-  def fullNameToFirstAndLast(fullName: String): (Option[String], Option[String]) = {
-    if (fullName.isEmpty) {
-      (None, None)
-    }
-    else if (!fullName.contains(" ")) {
-      (None, Some(fullName))
-    }
-    else {
-      val parts = fullName.split("\\s").reverse
-      (Some(parts.tail.reverse.mkString(" ")), Some(parts.head))
-    }
+  private val contacts = quote {
+    querySchema[Contact](
+      "salesforce.contact",
+      _.gitHubId -> "sf_cla__github_id__c",
+      _.firstName -> "firstname",
+      _.lastName -> "lastname"
+    )
   }
+
+  private val claSignatures = quote {
+    querySchema[ClaSignature](
+      "salesforce.sf_cla__cla_signature__c",
+      _.signedOn -> "sf_cla__signed_on__c",
+      _.claVersion -> "sf_cla__cla_version__c",
+      _.contactGitHubId -> "sf_cla__contact__r__sf_cla__github_id__c"
+    )
+  }
+
+  def findContactByGitHubId(gitHubId: String): Future[Option[Contact]] = {
+    val queryResult = run {
+      contacts.filter(_.gitHubId == lift(gitHubId))
+    }
+
+    queryResult.map(_.headOption)
+  }
+
+  def createContact(contact: Contact): Future[Contact] = {
+    val queryResult = run {
+      contacts.insert(lift(contact)).returning(_.id)
+    }
+
+    queryResult.map(newId => contact.copy(id = newId))
+  }
+
+  def createClaSignature(claSignature: ClaSignature): Future[ClaSignature] = {
+    val queryResult = run {
+      claSignatures.insert(lift(claSignature)).returning(_.id)
+    }
+
+    queryResult.map(newId => claSignature.copy(id = newId))
+  }
+
+  def findClaSignaturesByGitHubIds(gitHubIds: Set[String]): Future[Set[ClaSignature]] = {
+    val queryResult = run {
+      claSignatures.filter(claSignature => liftQuery(gitHubIds).contains(claSignature.contactGitHubId))
+    }
+
+    queryResult.map(_.toSet)
+  }
+
 }

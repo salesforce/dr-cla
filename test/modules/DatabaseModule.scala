@@ -28,28 +28,15 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-package controllers
+package modules
 
-import javax.inject.Inject
+import play.api.inject.{Binding, Module}
+import play.api.{Configuration, Environment}
 
-import play.api.Configuration
-import play.api.mvc.Controller
-
-
-class StaticWebJarAssets @Inject() (webJarAssets: WebJarAssets, configuration: Configuration) extends Controller {
-
-  // prepends a url if the assets.url config is set
-  def url(file: String): String = {
-    val baseUrl = routes.WebJarAssets.at(file).url
-    configuration.getString("assets.url").fold(baseUrl)(_ + baseUrl)
+class DatabaseModule extends Module {
+  def bindings(environment: Environment, configuration: Configuration): Seq[Binding[_]] = {
+    Seq(
+      bind[Database].to[DatabaseImpl]
+    )
   }
-
-  def locateUrl(path: String): String = {
-    url(locate(path))
-  }
-
-  def locate(path: String): String = {
-    webJarAssets.locate(path)
-  }
-
 }

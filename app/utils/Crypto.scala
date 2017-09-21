@@ -39,7 +39,7 @@ import play.api.Configuration
 class Crypto @Inject() (configuration: Configuration) {
 
   private val secretKey = {
-    val cryptoSecret = configuration.getString("play.crypto.secret")
+    val cryptoSecret = configuration.get[String]("play.http.secret.key")
     val keyGenerator = KeyGenerator.getInstance("AES")
     keyGenerator.init(128)
     keyGenerator.generateKey()

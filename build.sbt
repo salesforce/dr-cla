@@ -1,33 +1,31 @@
-import de.heikoseeberger.sbtheader.license.BSD3Clause
+import de.heikoseeberger.sbtheader.FileType
+import play.twirl.sbt.Import.TwirlKeys
 
-lazy val root = (project in file(".")).enablePlugins(PlayScala, ForcePlugin, AutomateHeaderPlugin)
+lazy val root = project.in(file(".")).enablePlugins(PlayScala, ForcePlugin, AutomateHeaderPlugin)
 
 name := "salesforce-cla"
 
-version := "1.0-SNAPSHOT"
-
-scalaVersion := "2.11.11"
+scalaVersion := "2.12.3"
 
 resolvers ++= Seq(Resolver.mavenLocal, Resolver.jcenterRepo)
 
 libraryDependencies ++= Seq(
+  guice,
   ws,
   filters,
 
-  "com.pauldijou"          %% "jwt-play-json"                      % "0.12.1",
+  "com.pauldijou"          %% "jwt-play-json"                      % "0.14.0",
 
-  "org.postgresql"         %  "postgresql"                         % "9.4-1203-jdbc42",
-  "org.flywaydb"           %% "flyway-play"                        % "3.0.0",
+  "org.postgresql"         %  "postgresql"                         % "42.1.4",
+  "org.flywaydb"           %% "flyway-play"                        % "4.0.0",
 
-  "com.github.mauricio"    %% "postgresql-async"                   % "0.2.21",
-  "com.kyleu"              %% "jdub-async"                         % "1.0",
+  "io.getquill"            %% "quill-async-postgres"               % "1.3.0",
 
-  "org.webjars"            %% "webjars-play"                       % "2.5.0-3",
-  "org.webjars"            %  "salesforce-lightning-design-system" % "0.10.1",
+  "org.webjars"            %% "webjars-play"                       % "2.6.2",
+  "org.webjars"            %  "salesforce-lightning-design-system" % "2.4.1",
   "org.webjars"            %  "octicons"                           % "3.1.0",
-  "org.webjars.bower"      %  "signature_pad"                      % "1.5.1",
 
-  "org.scalatestplus.play" %% "scalatestplus-play"                 % "2.0.0" % "test"
+  "org.scalatestplus.play" %% "scalatestplus-play"                 % "3.1.1" % "test"
 )
 
 pipelineStages := Seq(digest, gzip)
@@ -35,20 +33,26 @@ pipelineStages := Seq(digest, gzip)
 
 // The sbt-force plugin can be used to fetch and deploy metadata
 
-username in Force := sys.env.getOrElse("SALESFORCE_USERNAME", "")
+username.in(Force) := sys.env.getOrElse("SALESFORCE_USERNAME", "")
 
-password in Force := sys.env.getOrElse("SALESFORCE_PASSWORD", "")
+password.in(Force) := sys.env.getOrElse("SALESFORCE_PASSWORD", "")
 
-packagedComponents in Force := Seq("sf_cla")
+packagedComponents.in(Force) := Seq("sf_cla")
 
-headers := Map(
-  "scala" -> BSD3Clause("2017", "salesforce.com, inc."),
-  "conf" -> BSD3Clause("2017", "salesforce.com, inc.", "#"),
-  "html" -> BSD3Clause("2017", "salesforce.com, inc.", "@*")
-)
 
-excludes := Seq(
-  "conf/clas/**"
-)
+// license header stuff
 
-unmanagedSources.in(Compile, createHeaders) ++= sources.in(Compile, TwirlKeys.compileTemplates).value
+organizationName := "salesforce.com, inc."
+
+startYear := Some(2017)
+
+licenses += "BSD-3-Clause" -> url("https://opensource.org/licenses/BSD-3-Clause")
+
+headerMappings += FileType("html") -> HeaderCommentStyle.TwirlStyleBlockComment
+
+unmanagedSources.in(Compile, headerCreate) ++= sources.in(Compile, TwirlKeys.compileTemplates).value
+
+
+// license report stuff
+
+licenseConfigurations := Set("runtime")

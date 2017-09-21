@@ -93,7 +93,7 @@ class LoggerConfigurator extends LogbackLoggerConfigurator {
 
             wsClient
               .url("https://events.pagerduty.com/v2/enqueue")
-              .withHeaders(HeaderNames.AUTHORIZATION -> s"Token token=$pagerDutyToken")
+              .withHttpHeaders(HeaderNames.AUTHORIZATION -> s"Token token=$pagerDutyToken")
               .post(json)
           }
         }

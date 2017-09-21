@@ -30,23 +30,26 @@
 
 package controllers
 
+import java.time.LocalDateTime
 import javax.inject.Inject
 
 import models._
-import modules.Database
 import org.apache.commons.codec.digest.HmacUtils
-import org.joda.time.LocalDateTime
 import play.api.{Configuration, Environment, Logger}
 import play.api.libs.json.{JsObject, JsValue}
 import play.api.mvc.Results.EmptyContent
 import play.api.mvc._
-import utils.{Crypto, GitHub}
+import utils.{Crypto, DB, GitHub}
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.io.Source
 
 
-class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, crypto: Crypto, configuration: Configuration) (implicit staticWebJarAssets: StaticWebJarAssets, ec: ExecutionContext) extends Controller {
+class Application @Inject()
+  (env: Environment, gitHub: GitHub, db: DB, crypto: Crypto, configuration: Configuration)
+  (claSignView: views.html.claSign, claSignedView: views.html.claSigned, auditView: views.html.audit, auditReposView: views.html.auditRepos)
+  (implicit ec: ExecutionContext)
+  extends InjectedController {
 
   val claVersions = Set("0.0")
   val latestClaVersion = claVersions.head
@@ -59,7 +62,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
   }
 
   def wellKnown(key: String) = Action {
-    configuration.getString("wellknown").fold(NotFound(EmptyContent())) { wellKnownKeyValue =>
+    configuration.getOptional[String]("wellknown").fold(NotFound(EmptyContent())) { wellKnownKeyValue =>
       if (wellKnownKeyValue.startsWith(key + "=")) {
         Ok(wellKnownKeyValue.stripPrefix(key + "="))
       }
@@ -83,11 +86,11 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
   def signCla = Action.async { implicit request =>
     getGitHubAuthInfo(request).map { maybeGitHubAuthInfo =>
       val authUrl = gitHubAuthUrl(gitHubOauthScopesForClaSigning, routes.Application.signCla().absoluteURL())
-      Ok(views.html.claSign(latestClaVersion, authUrl, maybeGitHubAuthInfo, latestClaVersion, claText(latestClaVersion)))
+      Ok(claSignView(latestClaVersion, authUrl, maybeGitHubAuthInfo, latestClaVersion, claText(latestClaVersion)))
     }
   }
 
-  def submitCla = Action.async(parse.urlFormEncoded) { implicit request =>
+  def submitCla = Action.async(parse.formUrlEncoded) { implicit request =>
     val maybeClaSignatureFuture = for {
       encGitHubToken <- request.body.get("encGitHubToken").flatMap(_.headOption)
       claVersion <- claVersions.find(request.body.get("claVersion").flatMap(_.headOption).contains)
@@ -103,11 +106,13 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
           for {
             userInfo <- gitHub.userInfo(gitHubToken)
             username = (userInfo \ "login").as[String]
-            maybeContact <- db.query(GetContactByGitHubId(username))
-            contact = maybeContact.getOrElse {
-              Contact(-1, maybeFirstName, lastName, email, username)
-            }
-          } yield ClaSignature(-1, contact, new LocalDateTime(), claVersion)
+            maybeContact <- db.findContactByGitHubId(username)
+            contact <- maybeContact.fold {
+              db.createContact(Contact(-1, maybeFirstName, lastName, email, username))
+            } (Future.successful)
+            existingClaSignature <- db.findClaSignaturesByGitHubIds(Set(username))
+            if existingClaSignature.isEmpty
+          } yield ClaSignature(-1, contact.gitHubId, LocalDateTime.now(), claVersion)
         } else {
           Future.failed(new IllegalStateException("The CLA was not agreed to."))
         }
@@ -116,25 +121,15 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
     maybeClaSignatureFuture.fold {
       Future.successful(BadRequest("A required field was not specified."))
     } { claSignatureFuture =>
-      claSignatureFuture.flatMap { claSignature =>
-        // todo: transaction?
-
-        val createContactIfNeededFuture = if (claSignature.contact.id == -1) {
-          db.execute(CreateContact(claSignature.contact))
-        } else {
-          Future.successful(0)
+      for {
+        claSignature <- claSignatureFuture
+        persistedClaSignature <- db.createClaSignature(claSignature)
+      } yield {
+        revalidatePullRequests(claSignature.contactGitHubId).failed.foreach { e =>
+          Logger.error("Could not revalidate PRs", e)
         }
 
-        for {
-          contactsCreated <- createContactIfNeededFuture
-          claSignaturesCreated <- db.execute(CreateClaSignature(claSignature))
-          if claSignaturesCreated == 1
-        } yield {
-          revalidatePullRequests(claSignature.contact.gitHubId).onFailure {
-            case e: Exception => Logger.error("Could not revalidate PRs", e)
-          }
-          Redirect(routes.Application.signedCla())
-        }
+        Redirect(routes.Application.signedCla())
       }
     } recover {
       case _ =>
@@ -145,7 +140,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
   }
 
   def signedCla = Action {
-    Ok(views.html.claSigned.apply)
+    Ok(claSignedView())
   }
 
   case class NoPullRequest() extends Exception {
@@ -226,7 +221,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
 
         gitHub.integrationAndUserOrgs(userAccessToken).map { orgs =>
           val orgsWithEncAccessToken = orgs.mapValues(crypto.encryptAES)
-          Ok(views.html.audit(orgsWithEncAccessToken, gitHub.integrationSlug, gitHub.clientId))
+          Ok(auditView(orgsWithEncAccessToken, gitHub.integrationSlug, gitHub.clientId))
         }
       }
     }
@@ -242,11 +237,11 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
       collaborators <- collaboratorsFuture.map(gitHub.logins)
       allContributors <- allContributorsFuture.map(gitHub.contributorLoginsAndContributions)
       externalContributors = gitHub.externalContributors(allContributors.keySet, collaborators)
-      clasForExternalContributors <- db.query(GetClaSignatures(externalContributors))
+      clasForExternalContributors <- db.findClaSignaturesByGitHubIds(externalContributors)
     } yield {
 
       val externalContributorsDetails = externalContributors.map { gitHubId =>
-        val maybeClaSignature = clasForExternalContributors.find(_.contact.gitHubId == gitHubId)
+        val maybeClaSignature = clasForExternalContributors.find(_.contactGitHubId == gitHubId)
         val commits = allContributors.getOrElse(gitHubId, 0)
         gitHubId -> (maybeClaSignature, commits)
       }.toMap
@@ -267,7 +262,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
 
     gitHub.orgRepos(org, accessToken).map { jsArray =>
       val repos = jsArray.as[Seq[GitHub.Repo]]
-      Ok(views.html.auditRepos(org, repos, encAccessToken))
+      Ok(auditReposView(org, repos, encAccessToken))
     }
   }
 
@@ -288,7 +283,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
   private def validatePullRequests(pullRequestsToBeValidated: Map[JsObject, String])(implicit request: RequestHeader): Future[Iterable[JsObject]] = {
     val claUrl = routes.Application.signCla().absoluteURL()
     gitHub.validatePullRequests(pullRequestsToBeValidated, claUrl) { externalCommitters =>
-      db.query(GetClaSignatures(externalCommitters))
+      db.findClaSignaturesByGitHubIds(externalCommitters)
     }
   }
 
@@ -310,7 +305,7 @@ class Application @Inject() (env: Environment, gitHub: GitHub, db: Database, cry
   }
 
   private def claText(version: String): String = {
-    val claPath = s"clas/icla-$version.html"
+    val claPath = s"clas/icla-$version.txt"
     val claTextInputStream = env.resourceAsStream(claPath).getOrElse(throw new IllegalStateException(s"Could not locate the CLA: $claPath"))
     val claText = Source.fromInputStream(claTextInputStream).mkString
     claTextInputStream.close()

@@ -31,14 +31,15 @@
 package utils
 
 import modules.{Database, DatabaseMock}
-import org.scalatestplus.play.{OneAppPerSuite, PlaySpec}
+import org.scalatestplus.play.guice.GuiceOneAppPerTest
+import org.scalatestplus.play.PlaySpec
 import play.api.Mode
 import play.api.inject._
 import play.api.inject.guice.GuiceApplicationBuilder
 
-class CryptoSpec extends PlaySpec with OneAppPerSuite {
+class CryptoSpec extends PlaySpec with GuiceOneAppPerTest {
 
-  override implicit lazy val app = new GuiceApplicationBuilder()
+  override implicit def fakeApplication() = new GuiceApplicationBuilder()
     .overrides(bind[Database].to[DatabaseMock])
     .configure(
       Map(
@@ -48,7 +49,7 @@ class CryptoSpec extends PlaySpec with OneAppPerSuite {
     .in(Mode.Test)
     .build()
 
-  val crypto = new Crypto(app.configuration)
+  lazy val crypto = new Crypto(app.configuration)
 
   "encryptAES and decryptAES" must {
     "work" in {
