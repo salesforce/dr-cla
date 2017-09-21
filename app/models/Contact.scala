@@ -30,13 +30,9 @@
 
 package models
 
-import io.getquill.{Embedded, PostgresAsyncContext, SnakeCase}
-
-import scala.concurrent.{ExecutionContext, Future}
-
 
 // note: gitHubId is nullable in the DB but we only ever query for contacts with githubids, so we make it non-nullable here
-case class Contact(id: Int, firstName: Option[String], lastName: String, email: String, gitHubId: String) extends Embedded
+case class Contact(id: Int, firstName: Option[String], lastName: String, email: String, gitHubId: String)
 
 object Contact {
 

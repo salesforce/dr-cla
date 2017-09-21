@@ -40,8 +40,8 @@ import models.ClaSignature
 import org.apache.commons.codec.binary.Base64
 import org.bouncycastle.openssl.jcajce.JcaPEMKeyConverter
 import org.bouncycastle.openssl.{PEMKeyPair, PEMParser}
-import pdi.jwt.{JwtAlgorithm, JwtClaim, JwtJson}
 import pdi.jwt.JwtJson._
+import pdi.jwt.{JwtAlgorithm, JwtClaim, JwtJson}
 import play.api.Configuration
 import play.api.http.{HeaderNames, HttpVerbs, MimeTypes, Status}
 import play.api.i18n.{Lang, MessagesApi}
@@ -130,6 +130,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
 
   private def fetchPages(path: String, accessToken: String, pageSize: Int = 100): Future[JsArray] = {
     import io.netty.handler.codec.http.QueryStringDecoder
+
     import collection.JavaConverters._
 
     implicit class Regex(sc: StringContext) {
