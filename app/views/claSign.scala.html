@@ -28,7 +28,22 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *@
 
-@(version: String, authUrl: String, maybeGitHubAuthInfo: Option[GitHubAuthInfo], claVersion: String, claText: String)(implicit staticWebJarAssets: StaticWebJarAssets)
+@this(webJarsUtil: org.webjars.play.WebJarsUtil, main: main)
+
+@(version: String, authUrl: String, maybeGitHubAuthInfo: Option[GitHubAuthInfo], claVersion: String, claText: String)
+
+@import scala.util.Success
+
+@svg(path: String, symbol: String) = {
+    @webJarsUtil.url(path) match {
+        case Success(href) => {
+            <use xlink:href="@href#@symbol"></use>
+        }
+        case _ => {
+            <!-- Could not find @path -->
+        }
+    }
+}
 
 @main("Sign the Salesforce CLA") {
 
@@ -39,10 +54,11 @@
             <span class="slds-assistive-text">Login to GitHub</span>
             <div class="slds-media slds-media--reverse">
                 <div class="slds-media__body">
-                    <div class="slds-media slds-media--timeline slds-timeline__media--task">
-                        <div class="slds-media__figure">
-                            <svg aria-hidden="true" class="slds-icon slds-icon-standard-task slds-timeline__icon"></svg>
-                            <span class="octicon octicon-mark-github"></span>
+                    <div class="slds-media slds-media--timeline slds-timeline__media--email">
+                        <div class="slds-media__figure slds-timeline__icon">
+                            <div class="slds-icon_container slds-icon-standard-email">
+                                <span class="slds-icon slds-icon_small octicon octicon-mark-github"></span>
+                            </div>
                         </div>
                         <div class="slds-media__body">
                             <div class="slds-media slds-tile slds-media--small">
@@ -74,10 +90,12 @@
             <div class="slds-media slds-media--reverse">
                 <div class="slds-media__body">
                     <div class="slds-media slds-media--timeline slds-timeline__media--event">
-                        <div class="slds-media__figure">
-                            <svg aria-hidden="true" class="slds-icon slds-icon-standard-event slds-timeline__icon">
-                                <use xlink:href="@routes.WebJarAssets.at(staticWebJarAssets.locate("assets/icons/custom-sprite/svg/symbols.svg"))#custom16"></use>
-                            </svg>
+                        <div class="slds-media__figure slds-timeline__icon">
+                            <div class="slds-icon_container slds-icon-standard-product-required">
+                                <svg class="slds-icon slds-icon_small" aria-hidden="true">
+                                    @svg("custom-sprite/svg/symbols.svg", "custom16")
+                                </svg>
+                            </div>
                         </div>
                         <div class="slds-media__body">
                             <div class="slds-media slds-tile slds-media--small">
@@ -102,11 +120,13 @@
             <span class="slds-assistive-text">Call</span>
             <div class="slds-media slds-media--reverse">
                 <div class="slds-media__body">
-                    <div class="slds-media slds-media--timeline slds-timeline__media--call">
-                        <div class="slds-media__figure">
-                            <svg aria-hidden="true" class="slds-icon slds-icon-action-update-status slds-timeline__icon" style="padding: 3px;">
-                                <use xlink:href="@routes.WebJarAssets.at(staticWebJarAssets.locate("/assets/icons/action-sprite/svg/symbols.svg"))#update_status"></use>
-                            </svg>
+                    <div class="slds-media slds-media--timeline slds-timeline__media--task">
+                        <div class="slds-media__figure slds-timeline__icon">
+                            <div class="slds-icon_container slds-icon-standard-approval">
+                                <svg class="slds-icon slds-icon_small" aria-hidden="true">
+                                    @svg("standard-sprite/svg/symbols.svg", "approval")
+                                </svg>
+                            </div>
                         </div>
                         <div class="slds-media__body">
                             <div class="slds-media slds-tile slds-media--small">

@@ -30,7 +30,6 @@
 
 package models
 
-import jdub.async.{FlatSingleRowQuery, Row, Statement}
 
 // note: gitHubId is nullable in the DB but we only ever query for contacts with githubids, so we make it non-nullable here
 case class Contact(id: Int, firstName: Option[String], lastName: String, email: String, gitHubId: String)
@@ -49,25 +48,4 @@ object Contact {
       (Some(parts.tail.reverse.mkString(" ")), Some(parts.head))
     }
   }
-
-  def rowToContact(row: Row): Contact = {
-    val id = row.as[Int]("id")
-    val firstName = row.asOpt[String]("firstname")
-    val lastName = row.as[String]("lastname")
-    val email = row.as[String]("email")
-    val gitHubId = row.as[String]("sf_cla__github_id__c")
-    Contact(id, firstName, lastName, email, gitHubId)
-  }
-
-}
-
-case class GetContactByGitHubId(gitHubId: String) extends FlatSingleRowQuery[Contact] {
-  override val sql = "SELECT id, firstname, lastname, email, sf_cla__github_id__c FROM salesforce.Contact WHERE sf_cla__github_id__c = ?"
-  override val values = Seq(gitHubId)
-  override def flatMap(row: Row) = Some(Contact.rowToContact(row))
-}
-
-case class CreateContact(contact: Contact) extends Statement {
-  override val sql = "INSERT INTO salesforce.Contact (firstname, lastname, email, sf_cla__github_id__c) VALUES (?, ?, ?, ?)"
-  override val values = Seq(contact.firstName, contact.lastName, contact.email, contact.gitHubId)
 }

@@ -28,52 +28,80 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-package models
+package utils
 
+import java.time.LocalDateTime
+
+import models.{ClaSignature, Contact}
 import modules.Database
-import org.scalatestplus.play.{OneAppPerSuite, PlaySpec}
 import org.flywaydb.play.PlayInitializer
+import org.scalatestplus.play.PlaySpec
+import org.scalatestplus.play.guice.GuiceOneAppPerSuite
 import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.test.Helpers._
 
-class ContactSpec extends PlaySpec with OneAppPerSuite {
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.util.Try
+
+
+class DBSpec extends PlaySpec with GuiceOneAppPerSuite {
 
   val dbUrl = sys.env.getOrElse("DATABASE_URL", "postgres://salesforcecla:password@localhost:5432/salesforcecla-test")
 
   val testConfig = Map("db.default.url" -> dbUrl)
 
-  implicit override lazy val app = new GuiceApplicationBuilder().configure(testConfig).build()
+  implicit override def fakeApplication() = new GuiceApplicationBuilder().configure(testConfig).build()
 
-  lazy val db = app.injector.instanceOf[Database]
-  lazy val playInitializer = app.injector.instanceOf[PlayInitializer]
+  lazy val database = app.injector.instanceOf[Database]
+  lazy val db = app.injector.instanceOf[DB]
+  lazy val playIntializer = app.injector.instanceOf[PlayInitializer]
 
-  // todo: this doesn't seem to work
-  await(db.raw("reset db", "drop schema salesforce cascade"))
-  await(db.raw("reset db", "drop table schema_version"))
+  import database.ctx._
 
-  playInitializer.onStart()
+  Try(await(database.ctx.executeQuery("drop schema salesforce cascade")))
+  Try(await(database.ctx.executeQuery("drop table schema_version")))
+
+  playIntializer.onStart()
 
   "Contact" must {
     "be creatable" in {
-      val numRows = await(db.execute(CreateContact(Contact(-1, Some("foo"), "bar", "foo@bar.com", "foobar"))))
-      numRows mustEqual 1
+      val contact = await(db.createContact(Contact(-1, Some("foo"), "bar", "foo@bar.com", "foobar")))
+      contact.id must not equal -1
     }
     "be creatable with null firstname" in {
-      val numRows = await(db.execute(CreateContact(Contact(-1, None, "blah", "blah@blah.com", "blah"))))
-      numRows mustEqual 1
+      val contact = await(db.createContact(Contact(-1, None, "blah", "blah@blah.com", "blah")))
+      contact.id must not equal -1
     }
     "be able to get one that exists by the gitHubId" in {
-      val contact = await(db.query(GetContactByGitHubId("foobar")))
+      val contact = await(db.findContactByGitHubId("foobar"))
       contact mustBe 'defined
     }
     "fail to get one that doesn't exist by a gitHubId" in {
-      val contact = await(db.query(GetContactByGitHubId("asdf")))
+      val contact = await(db.findContactByGitHubId("asdf"))
       contact mustBe None
     }
     "work with null firstname" in {
-      val contact = await(db.query(GetContactByGitHubId("blah")))
+      val contact = await(db.findContactByGitHubId("blah"))
       contact mustBe 'defined
       contact.get.firstName mustBe empty
+    }
+  }
+
+  "ClaSignature" must {
+    "be creatable" in {
+      val contact = Contact(-1, Some("foo"), "bar", "foo@bar.com", "foobar")
+      val claSignature = await(db.createClaSignature(ClaSignature(-1, contact.gitHubId, LocalDateTime.now(), "0.0.0")))
+      claSignature.id must not equal -1
+    }
+    "be queryable with one github id" in {
+      val claSignatures = await(db.findClaSignaturesByGitHubIds(Set("foobar")))
+      claSignatures.size mustEqual 1
+      claSignatures.head.contactGitHubId mustEqual "foobar"
+    }
+    "be queryable with a set of github ids" in {
+      val claSignatures = await(db.findClaSignaturesByGitHubIds(Set("foobar", "jondoe")))
+      claSignatures.size mustEqual 1
+      claSignatures.head.contactGitHubId mustEqual "foobar"
     }
   }
 

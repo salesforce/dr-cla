@@ -26,4 +26,4 @@ GET        /assets/*file                     controllers.Assets.versioned(path="
 GET        /favicon.ico                      controllers.Assets.at(path="/public/images", file="favicon.ico")
 
 # WebJars
-GET        /webjars/*file                    controllers.WebJarAssets.at(file)
+->         /webjars                          webjars.Routes

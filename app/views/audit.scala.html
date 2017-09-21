@@ -28,7 +28,9 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *@
 
-@(orgs: Map[String, String], integrationSlug: String, oAuthClientId: String)(implicit staticWebJarAssets: StaticWebJarAssets)
+@this(main: main, webJarsUtil: org.webjars.play.WebJarsUtil)
+
+@(orgs: Map[String, String], integrationSlug: String, oAuthClientId: String)
 
 @main("CLA Audit") {
 
@@ -36,8 +38,8 @@
 
     <h2 class="slds-text-heading--medium" style="text-align: left; padding-left: 0.5rem;">Orgs You Can Audit:</h2>
     @orgs.map { case (org, encAccessToken) =>
-        <ul class="slds-list--vertical slds-has-dividers">
-            <li class="slds-list__item nohover">
+        <ul class="slds-has-dividers_bottom-space" style="padding-left: 0.5rem">
+            <li>
                 <div class="slds-tile">
                     <p class="slds-tile__title slds-truncate">GitHub Organization: <a href="https://github.com/@org">@org</a></p>
                     <div class="slds-tile__detail slds-text-body--small">
@@ -46,7 +48,7 @@
                                 <div data-href="@routes.Application.auditRepos(org, encAccessToken)" data-autoload="false">
                                     <button class="slds-button slds-button--brand">
                                         Load Repos
-                                        <img src="@staticWebJarAssets.locateUrl("assets/images/spinners/slds_spinner.gif")" alt="Loading..." class="slds-button__icon slds-button__icon--right" style="height: 1rem; display: none;" />
+                                        @Html(webJarsUtil.img(webJarsUtil.url("slds_spinner.gif"), Map("alt" -> "Loading...", "class" -> "slds-button__icon slds-button__icon--right", "style" -> "height: 1rem; display: none;")))
                                     </button>
                                 </div>
                             </li>

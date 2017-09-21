@@ -30,9 +30,10 @@
 
 package utils
 
+import java.time.LocalDateTime
+
 import models.{ClaSignature, Contact}
 import modules.{Database, DatabaseMock}
-import org.joda.time.LocalDateTime
 import org.scalatestplus.play.guice.GuiceOneAppPerSuite
 import org.scalatestplus.play.PlaySpec
 import pdi.jwt.{JwtClaim, JwtJson}
@@ -685,7 +686,7 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
       val pullRequestsViaIntegration = Map(testExternalPullRequest -> testIntegrationToken)
 
       val validationResultsFuture = gitHub.validatePullRequests(pullRequestsViaIntegration, "http://asdf.com/") { _ =>
-        Future.successful(Set(ClaSignature(1, Contact(1, Some("Jon"), "Doe", "jdoe@foo.com", testLogin2), new LocalDateTime(), "1.0")))
+        Future.successful(Set(ClaSignature(1, testLogin2, LocalDateTime.now(), "1.0")))
       }
 
       val validationResults = await(validationResultsFuture)

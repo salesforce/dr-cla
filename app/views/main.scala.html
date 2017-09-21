@@ -28,96 +28,80 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *@
 
-@(title: String)(content: Html)(implicit staticWebJarAssets: StaticWebJarAssets)
+@this(webJarsUtil: org.webjars.play.WebJarsUtil)
+
+@(title: String)(content: Html)
+
+@import scala.util.Success
+
+@urlTry(path: String) = @{
+    webJarsUtil.localOrCdnUrl(webJarsUtil.locate(path))
+}
+
+@fontFace(name: String, woffPath: String, woff2Path: String) = {
+
+    @(urlTry(woffPath), urlTry(woff2Path)) match {
+        case (Success(woffUrl), Success(woff2Url)) => {
+            @@font-face {
+                font-family: "Salesforce Sans";
+                src: url("@woff2Url") format("woff2"), url("@woffUrl") format("woff");
+                font-weight: 300;
+            }
+        }
+        case _ => {
+            // Could not locate font: @woffPath @woff2Path
+        }
+    }
+
+}
+
 <!DOCTYPE html>
 <html>
     <head>
         <title>@title</title>
         <link rel="shortcut icon" type="image/ico" href="/favicon.ico"/>
-        <link rel="stylesheet" href="@staticWebJarAssets.locateUrl("assets/styles/salesforce-lightning-design-system.css")">
-        <link rel="stylesheet" href="@staticWebJarAssets.locateUrl("octicons/octicons.css")">
-        <link rel="prefetch" href="@staticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-Light.woff2")">
-        <link rel="prefetch" href="@staticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-Regular.woff2")">
+        @Html(webJarsUtil.css("salesforce-lightning-design-system.css"))
+        @Html(webJarsUtil.css("octicons.css"))
         <style>
-        @@font-face {
-            font-family: "Salesforce Sans";
-            src: url("@staticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-Light.woff2")") format("woff2"), url("@staticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-Light.woff")") format("woff");
-            font-weight: 300;
-        }
+            body {
+                width: 100%;
+            }
 
-        @@font-face {
-            font-family: "Salesforce Sans";
-            src: url("@staticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-LightItalic.woff2")") format("woff2"), url("@staticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-LightItalic.woff")") format("woff");
-            font-style: italic;
-            font-weight: 300;
-        }
+            pre {
+                width: 100%;
+                height: 500px;
+                text-align: left;
+                padding: 10px;
+                background-color: #dddddd;
+                border: #999999 solid 1px;
+                white-space: pre-wrap;
+                white-space: -moz-pre-wrap !important;
+                white-space: -pre-wrap;
+                white-space: -o-pre-wrap;
+                word-wrap: break-word;
+            }
 
-        @@font-face {
-            font-family: "Salesforce Sans";
-            src: url("@staticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-Regular.woff2")") format("woff2"), url("@staticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-Regular.woff")") format("woff");
-            font-weight: 400;
-        }
+            .slds-tile__title, .slds-tile__detail {
+                text-align: left;
+            }
 
-        @@font-face {
-            font-family: "Salesforce Sans";
-            src: url("@staticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-Italic.woff2")") format("woff2"), url("@staticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-Italic.woff")") format("woff");
-            font-style: italic;
-            font-weight: 400;
-        }
+            .slds-icon_container > .octicon {
+                line-height: inherit;
+                margin-left: 2px;
+                color: #fff;
+                text-align: center;
+            }
 
-        @@font-face {
-            font-family: "Salesforce Sans";
-            src: url("@staticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-Bold.woff2")") format("woff2"), url("@staticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-Bold.woff")") format("woff");
-            font-weight: 700;
-        }
-
-        @@font-face {
-            font-family: "Salesforce Sans";
-            src: url("@staticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-BoldItalic.woff2")") format("woff2"), url("@staticWebJarAssets.locateUrl("assets/fonts/webfonts/SalesforceSans-BoldItalic.woff")") format("woff");
-            font-style: italic;
-            font-weight: 700;
-        }
-
-        body {
-            width: 100%;
-        }
-
-        pre {
-            width: 100%;
-            height: 500px;
-            text-align: left;
-            padding: 10px;
-            background-color: #dddddd;
-            border: #999999 solid 1px;
-            white-space: pre-wrap;
-            white-space: -moz-pre-wrap !important;
-            white-space: -pre-wrap;
-            white-space: -o-pre-wrap;
-            word-wrap: break-word;
-        }
-
-        .slds-tile__title, .slds-tile__detail {
-            text-align: left;
-        }
-
-        .slds-media__figure > .octicon {
-            display: block;
-            font-size: 20px;
-            margin-top: -26px;
-            margin-left: 2px;
-            color: #fff;
-        }
-
-        .slds-list--vertical.slds-has-dividers > .nohover.slds-list__item:hover {
-            background-color: transparent;
-        }
+            .slds-list--vertical.slds-has-dividers > .nohover.slds-list__item:hover {
+                background-color: transparent;
+            }
         </style>
     </head>
     <body>
         <div class="slds-container--center slds-container--medium" style="text-align: center; padding: 20px;">
             <img src="@routes.Assets.versioned("images/salesforce.svg")" style="height: 57px">
         </div>
-        <img id="loading" src="@staticWebJarAssets.locateUrl("assets/images/spinners/slds_spinner.gif")" alt="Loading..." style="height: 4rem; vertical-align: top; display: block; margin: auto" />
+        @Html(webJarsUtil.img(webJarsUtil.url("slds_spinner.gif"), Map("id" -> "loading", "alt" -> "Loading...", "style" -> "height: 4rem; vertical-align: top; display: block; margin: auto")))
         <div id="content" class="slds-container--center slds-container--medium" style="text-align: center; display: none;">
             @content
         </div>

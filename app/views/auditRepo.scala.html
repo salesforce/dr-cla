@@ -28,7 +28,14 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *@
 
+@import java.time.LocalDateTime
+@import java.time.format.DateTimeFormatter
+
 @(externalContributors: Map[String, (Option[ClaSignature], Int)], internalContributors: Map[String, Int])
+
+@dateFormat(dateTime: LocalDateTime) = @{
+    dateTime.format(DateTimeFormatter.ofPattern("MMM dd, yyyy"))
+}
 
 @if(internalContributors.nonEmpty) {
     Internal Contributors:
@@ -50,11 +57,10 @@
                 (@commits commits)
 
                 @maybeClaSignature.fold {
-                    <span class="slds-badge" style="background-color: #ff0000; color: #000000; font-weight: bold;">CLA has not been signed</span>
+                    <span class="slds-badge" style="background-color: #ff0000; color: #000000; font-weight: bold; vertical-align: middle;">CLA has not been signed</span>
                 } { claSignature =>
-                    <span class="slds-badge">CLA signed on @claSignature.signedOn.toString("MMM dd, yyyy")</span>
+                    <span class="slds-badge" style="vertical-align: middle">CLA signed on @dateFormat(claSignature.signedOn)</span>
                 }
-
             </li>
         }
     </ul>

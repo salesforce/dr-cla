@@ -30,35 +30,65 @@
 
 package utils
 
-import java.util.Base64
-import javax.crypto.{Cipher, KeyGenerator}
 import javax.inject.Inject
 
-import play.api.Configuration
+import models.{ClaSignature, Contact}
+import modules.Database
 
-class Crypto @Inject() (configuration: Configuration) {
+import scala.concurrent.{ExecutionContext, Future}
 
-  private val secretKey = {
-    val cryptoSecret = configuration.get[String]("play.http.secret.key")
-    val keyGenerator = KeyGenerator.getInstance("AES")
-    keyGenerator.init(128)
-    keyGenerator.generateKey()
+class DB @Inject()(database: Database)(implicit ec: ExecutionContext) {
+
+  import database.ctx._
+
+  private val contacts = quote {
+    querySchema[Contact](
+      "salesforce.contact",
+      _.gitHubId -> "sf_cla__github_id__c",
+      _.firstName -> "firstname",
+      _.lastName -> "lastname"
+    )
   }
 
-  def encryptAES(plainText: String): String = {
-    val plainTextBytes = plainText.getBytes
-    val cipher = Cipher.getInstance("AES")
-    cipher.init(Cipher.ENCRYPT_MODE, secretKey)
-    val encryptedButes = cipher.doFinal(plainTextBytes)
-    Base64.getEncoder.encodeToString(encryptedButes)
+  private val claSignatures = quote {
+    querySchema[ClaSignature](
+      "salesforce.sf_cla__cla_signature__c",
+      _.signedOn -> "sf_cla__signed_on__c",
+      _.claVersion -> "sf_cla__cla_version__c",
+      _.contactGitHubId -> "sf_cla__contact__r__sf_cla__github_id__c"
+    )
   }
 
-  def decryptAES(encryptedText: String): String = {
-    val encryptedTextBytes = Base64.getDecoder.decode(encryptedText)
-    val cipher = Cipher.getInstance("AES")
-    cipher.init(Cipher.DECRYPT_MODE, secretKey)
-    val decryptedBytes = cipher.doFinal(encryptedTextBytes)
-    new String(decryptedBytes)
+  def findContactByGitHubId(gitHubId: String): Future[Option[Contact]] = {
+    val queryResult = run {
+      contacts.filter(_.gitHubId == lift(gitHubId))
+    }
+
+    queryResult.map(_.headOption)
+  }
+
+  def createContact(contact: Contact): Future[Contact] = {
+    val queryResult = run {
+      contacts.insert(lift(contact)).returning(_.id)
+    }
+
+    queryResult.map(newId => contact.copy(id = newId))
+  }
+
+  def createClaSignature(claSignature: ClaSignature): Future[ClaSignature] = {
+    val queryResult = run {
+      claSignatures.insert(lift(claSignature)).returning(_.id)
+    }
+
+    queryResult.map(newId => claSignature.copy(id = newId))
+  }
+
+  def findClaSignaturesByGitHubIds(gitHubIds: Set[String]): Future[Set[ClaSignature]] = {
+    val queryResult = run {
+      claSignatures.filter(claSignature => liftQuery(gitHubIds).contains(claSignature.contactGitHubId))
+    }
+
+    queryResult.map(_.toSet)
   }
 
 }

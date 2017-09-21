@@ -31,7 +31,8 @@
 package utils
 
 import modules.{Database, DatabaseMock}
-import org.scalatestplus.play.{OneAppPerSuite, PlaySpec}
+import org.scalatestplus.play.guice.GuiceOneAppPerTest
+import org.scalatestplus.play.PlaySpec
 import play.api.Mode
 import play.api.http.HeaderNames
 import play.api.inject._
@@ -40,14 +41,14 @@ import play.api.mvc._
 import play.api.test.Helpers._
 import play.api.test._
 
-class FiltersSpec extends PlaySpec with OneAppPerSuite {
+class FiltersSpec extends PlaySpec with GuiceOneAppPerTest {
 
   lazy val appBuilder = new GuiceApplicationBuilder()
     .overrides(bind[Database].to[DatabaseMock])
     .configure("play.modules.disabled" -> Seq("org.flywaydb.play.PlayModule", "modules.DatabaseModule"))
     .in(Mode.Test)
 
-  override implicit lazy val app = appBuilder.build()
+  override def fakeApplication() = appBuilder.build()
 
   "Filters" must {
     "redirect to https if the request was forwarded and not https" in {
