@@ -30,20 +30,9 @@
 
 @this(webJarsUtil: org.webjars.play.WebJarsUtil, main: main)
 
-@(version: String, authUrl: String, maybeGitHubAuthInfo: Option[GitHubAuthInfo], claVersion: String, claText: String)
+@(version: String, authUrl: String, maybeGitHubAuthInfo: Option[GitHubAuthInfo], claVersion: String, claText: String, svgInline: (String, String) => Html)
 
 @import scala.util.Success
-
-@svg(path: String, symbol: String) = {
-    @webJarsUtil.url(path) match {
-        case Success(href) => {
-            <use xlink:href="@href#@symbol"></use>
-        }
-        case _ => {
-            <!-- Could not find @path -->
-        }
-    }
-}
 
 @main("Sign the Salesforce CLA") {
 
@@ -93,7 +82,7 @@
                         <div class="slds-media__figure slds-timeline__icon">
                             <div class="slds-icon_container slds-icon-standard-product-required">
                                 <svg class="slds-icon slds-icon_small" aria-hidden="true">
-                                    @svg("custom-sprite/svg/symbols.svg", "custom16")
+                                    @svgInline("custom-sprite/svg/symbols.svg", "custom16")
                                 </svg>
                             </div>
                         </div>
@@ -124,7 +113,7 @@
                         <div class="slds-media__figure slds-timeline__icon">
                             <div class="slds-icon_container slds-icon-standard-approval">
                                 <svg class="slds-icon slds-icon_small" aria-hidden="true">
-                                    @svg("standard-sprite/svg/symbols.svg", "approval")
+                                    @svgInline("standard-sprite/svg/symbols.svg", "approval")
                                 </svg>
                             </div>
                         </div>

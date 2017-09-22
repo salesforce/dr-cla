@@ -35,18 +35,23 @@ import javax.inject.Inject
 
 import models._
 import org.apache.commons.codec.digest.HmacUtils
+import org.webjars.WebJarAssetLocator
+import org.webjars.play.WebJarsUtil
 import play.api.{Configuration, Environment, Logger}
 import play.api.libs.json.{JsObject, JsValue}
 import play.api.mvc.Results.EmptyContent
 import play.api.mvc._
+import play.twirl.api.Html
 import utils.{Crypto, DB, GitHub}
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.io.Source
+import scala.util.{Failure, Success, Try}
+import scala.xml.{Comment, Node}
 
 
 class Application @Inject()
-  (env: Environment, gitHub: GitHub, db: DB, crypto: Crypto, configuration: Configuration)
+  (env: Environment, gitHub: GitHub, db: DB, crypto: Crypto, configuration: Configuration, webJarsUtil: WebJarsUtil)
   (claSignView: views.html.claSign, claSignedView: views.html.claSigned, auditView: views.html.audit, auditReposView: views.html.auditRepos)
   (implicit ec: ExecutionContext)
   extends InjectedController {
@@ -86,7 +91,7 @@ class Application @Inject()
   def signCla = Action.async { implicit request =>
     getGitHubAuthInfo(request).map { maybeGitHubAuthInfo =>
       val authUrl = gitHubAuthUrl(gitHubOauthScopesForClaSigning, routes.Application.signCla().absoluteURL())
-      Ok(claSignView(latestClaVersion, authUrl, maybeGitHubAuthInfo, latestClaVersion, claText(latestClaVersion)))
+      Ok(claSignView(latestClaVersion, authUrl, maybeGitHubAuthInfo, latestClaVersion, claText(latestClaVersion), svgInline))
     }
   }
 
@@ -264,6 +269,29 @@ class Application @Inject()
       val repos = jsArray.as[Seq[GitHub.Repo]]
       Ok(auditReposView(org, repos, encAccessToken))
     }
+  }
+
+  private[controllers] def svgSymbol(path: String, symbol: String): Node = {
+    webJarsUtil.locate(path).flatMap { filePath =>
+      val maybeInputStream = env.resourceAsStream(WebJarAssetLocator.WEBJARS_PATH_PREFIX + "/" + filePath)
+      maybeInputStream.fold[Try[Node]](Failure(new Exception("Could not read file"))) { inputStream =>
+        val elem = scala.xml.XML.load(inputStream)
+        inputStream.close()
+
+        val maybeSymbol = elem.child.find { node =>
+          node \@ "id" == symbol
+        } flatMap (_.child.headOption)
+
+        maybeSymbol.fold[Try[Node]](Failure(new Exception(s"Could not find symbol $symbol")))(Success(_))
+      }
+    } fold (
+      { t => Comment(s"Error getting SVG: ${t.getMessage}") },
+      { identity }
+    )
+  }
+
+  private def svgInline(path: String, symbol: String): Html = {
+    Html(svgSymbol(path, symbol).toString())
   }
 
   private def getGitHubAuthInfo(request: RequestHeader): Future[Option[GitHubAuthInfo]] = {
