@@ -52,7 +52,7 @@ import scala.xml.{Comment, Node}
 
 class Application @Inject()
   (env: Environment, gitHub: GitHub, db: DB, crypto: Crypto, configuration: Configuration, webJarsUtil: WebJarsUtil)
-  (claSignView: views.html.claSign, claSignedView: views.html.claSigned, auditView: views.html.audit, auditReposView: views.html.auditRepos)
+  (claSignView: views.html.claSign, claSignedView: views.html.claSigned, claAlreadySignedView: views.html.claAlreadySigned, auditView: views.html.audit, auditReposView: views.html.auditRepos)
   (implicit ec: ExecutionContext)
   extends InjectedController {
 
@@ -89,9 +89,22 @@ class Application @Inject()
   }
 
   def signCla = Action.async { implicit request =>
-    getGitHubAuthInfo(request).map { maybeGitHubAuthInfo =>
-      val authUrl = gitHubAuthUrl(gitHubOauthScopesForClaSigning, routes.Application.signCla().absoluteURL())
-      Ok(claSignView(latestClaVersion, authUrl, maybeGitHubAuthInfo, latestClaVersion, claText(latestClaVersion), svgInline))
+    getGitHubAuthInfo(request).flatMap { maybeGitHubAuthInfo =>
+      val claSignatureExistsFuture = maybeGitHubAuthInfo.fold(Future.unit) { gitHubAuthInfo =>
+        db.findClaSignaturesByGitHubIds(Set(gitHubAuthInfo.userName)).flatMap { claSignatures =>
+          claSignatures.headOption.fold(Future.unit) { claSignature =>
+            Future.failed(AlreadyExistsException(claSignature))
+          }
+        }
+      }
+
+      claSignatureExistsFuture.map { _ =>
+        val authUrl = gitHubAuthUrl(gitHubOauthScopesForClaSigning, routes.Application.signCla().absoluteURL())
+        Ok(claSignView(latestClaVersion, authUrl, maybeGitHubAuthInfo, latestClaVersion, claText(latestClaVersion), svgInline))
+      } recover {
+        case AlreadyExistsException(claSignature) =>
+          BadRequest(claAlreadySignedView(claSignature.signedOn))
+      }
     }
   }
 
@@ -115,9 +128,13 @@ class Application @Inject()
             contact <- maybeContact.fold {
               db.createContact(Contact(-1, maybeFirstName, lastName, email, username))
             } (Future.successful)
-            existingClaSignature <- db.findClaSignaturesByGitHubIds(Set(username))
-            if existingClaSignature.isEmpty
-          } yield ClaSignature(-1, contact.gitHubId, LocalDateTime.now(), claVersion)
+            existingClaSignatures <- db.findClaSignaturesByGitHubIds(Set(username))
+            claSignature <- existingClaSignatures.headOption.fold {
+              Future.successful(ClaSignature(-1, contact.gitHubId, LocalDateTime.now(), claVersion))
+            } { existingClaSignature =>
+              Future.failed(AlreadyExistsException(existingClaSignature))
+            }
+          } yield claSignature
         } else {
           Future.failed(new IllegalStateException("The CLA was not agreed to."))
         }
@@ -137,8 +154,10 @@ class Application @Inject()
         Redirect(routes.Application.signedCla())
       }
     } recover {
-      case _ =>
-        Logger.error("CLA could not be signed. " + request.body.toString())
+      case AlreadyExistsException(claSignature) =>
+        BadRequest(claAlreadySignedView(claSignature.signedOn))
+      case e: Throwable =>
+        Logger.error("CLA could not be signed.", e)
         InternalServerError("Could not sign the CLA, please contact oss-cla@salesforce.com")
     }
 
@@ -339,5 +358,7 @@ class Application @Inject()
     claTextInputStream.close()
     claText
   }
+
+  case class AlreadyExistsException(claSignature: ClaSignature) extends Exception
 
 }
