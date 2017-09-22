@@ -66,7 +66,7 @@ Run the Web App
 
 1. Start the web app:
 
-        $ ./activator ~run
+        $ ./sbt ~run
 
 1. Authenticate to GitHub with your test user
 1. Open the audit page: `https://SOMETHING.ngrok.com/audit`
@@ -90,8 +90,8 @@ Run the Tests
 
 1. Run all of the tests continuously:
 
-        $ ./activator ~test
+        $ ./sbt ~test
 
 1 Run just the `GitHubSpec` tests continuously:
 
-        $ ./activator ~testOnly utils.GitHubSpec
+        $ ./sbt ~testOnly utils.GitHubSpec
