@@ -207,7 +207,7 @@ class Application @Inject()
             }
           }
         } {
-          case "opened" | "reopened" =>
+          case "opened" | "reopened" | "synchronize" =>
             val installationId = (request.body \ "installation" \ "id").as[Int]
             val handlePullRequestFuture = for {
               token <- gitHub.installationAccessTokens(installationId).map(_.\("token").as[String])
