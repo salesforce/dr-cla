@@ -87,6 +87,6 @@ class DatabaseImpl @Inject()(lifecycle: ApplicationLifecycle, playConfig: Config
     pool.close
   }
 
-  val ctx = new PostgresAsyncContext[SnakeCase](pool)
+  val ctx = new PostgresAsyncContext(SnakeCase, pool)
 
 }

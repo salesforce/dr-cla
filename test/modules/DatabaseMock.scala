@@ -33,5 +33,5 @@ package modules
 import io.getquill.{PostgresAsyncContext, SnakeCase}
 
 class DatabaseMock extends Database {
-  override val ctx = new PostgresAsyncContext[SnakeCase]("ctx")
+  override val ctx = new PostgresAsyncContext(SnakeCase, "ctx")
 }
