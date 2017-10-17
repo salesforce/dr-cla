@@ -56,8 +56,6 @@ class DBSpec extends PlaySpec with GuiceOneAppPerSuite {
   lazy val db = app.injector.instanceOf[DB]
   lazy val playIntializer = app.injector.instanceOf[PlayInitializer]
 
-  import database.ctx._
-
   Try(await(database.ctx.executeQuery("drop schema salesforce cascade")))
   Try(await(database.ctx.executeQuery("drop table schema_version")))
 

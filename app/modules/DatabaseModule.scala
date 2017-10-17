@@ -32,6 +32,7 @@ package modules
 
 import javax.inject.{Inject, Singleton}
 
+import com.github.mauricio.async.db.SSLConfiguration
 import com.github.mauricio.async.db.pool.{PartitionedConnectionPool, PoolConfiguration}
 import com.github.mauricio.async.db.postgresql.pool.PostgreSQLConnectionFactory
 import com.github.mauricio.async.db.postgresql.util.URLParser
@@ -63,7 +64,12 @@ class DatabaseImpl @Inject()(lifecycle: ApplicationLifecycle, playConfig: Config
 
   private val config = maybeDbUrl.map(URLParser.parse(_)).getOrElse(URLParser.DEFAULT)
 
-  private val connectionFactory = new PostgreSQLConnectionFactory(config)
+  private val configWithMaybeSsl = playConfig.getOptional[String]("db.default.sslmode").fold(config) { sslmode =>
+    val sslConfig = SSLConfiguration(Map("sslmode" -> sslmode))
+    config.copy(ssl = sslConfig)
+  }
+
+  private val connectionFactory = new PostgreSQLConnectionFactory(configWithMaybeSsl)
 
   private val defaultPoolConfig = PoolConfiguration.Default
 
