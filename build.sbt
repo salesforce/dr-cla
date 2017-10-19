@@ -5,7 +5,7 @@ lazy val root = project.in(file(".")).enablePlugins(PlayScala, ForcePlugin, Auto
 
 name := "salesforce-cla"
 
-scalaVersion := "2.12.3"
+scalaVersion := "2.12.4"
 
 resolvers ++= Seq(Resolver.mavenLocal, Resolver.jcenterRepo)
 
@@ -13,6 +13,8 @@ libraryDependencies ++= Seq(
   guice,
   ws,
   filters,
+
+  "com.fasterxml.jackson.core" % "jackson-databind"                % "2.8.10",
 
   "com.pauldijou"          %% "jwt-play-json"                      % "0.14.0",
 
