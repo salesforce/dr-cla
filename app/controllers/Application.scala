@@ -63,7 +63,7 @@ class Application @Inject()
   val gitHubOauthScopesForAudit = Seq("read:org")
 
   def index = Action {
-    Redirect("http://salesforce.github.io/")
+    Redirect("http://my.sonatype.com/")
   }
 
   def wellKnown(key: String) = Action {
