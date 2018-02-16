@@ -84,6 +84,7 @@ class Application @Inject()
       Redirect(state).flashing("encAccessToken" -> encAccessToken)
     } recover {
       case e: utils.UnauthorizedError => Redirect(state).flashing("error" -> e.getMessage)
+      case e: Logger.error("Fun fun fun", "code:" + code + " state:" state)
       case e: Exception => InternalServerError(e.getMessage)
     }
   }
