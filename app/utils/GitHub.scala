@@ -153,7 +153,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
 
       val pages = response.header("Link") match {
         case Some(r"""<(.*)$n>; rel="next", <(.*)$l>; rel="last"""") =>
-          Range(urlToPage(n), urlToPage(l) + 1)
+          Range(urlToPage(n), urlToPage(l)).inclusive
         case _ =>
           Range(0, 0)
       }
