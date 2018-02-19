@@ -23,6 +23,9 @@
   "addons": [
     "heroku-postgresql"
   ],
+  "scripts": {
+    "postdeploy": "target/universal/stage/bin/apply-evolutions"
+  },
   "environments": {
     "test": {
       "env": {
