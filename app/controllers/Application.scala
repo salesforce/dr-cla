@@ -33,6 +33,8 @@ package controllers
 import java.time.LocalDateTime
 import javax.inject.Inject
 
+import akka.http.scaladsl.model.Uri
+import akka.http.scaladsl.model.Uri.Query
 import models._
 import org.apache.commons.codec.digest.HmacUtils
 import org.webjars.WebJarAssetLocator
@@ -42,6 +44,7 @@ import play.api.libs.json.{JsObject, JsValue}
 import play.api.mvc.Results.EmptyContent
 import play.api.mvc._
 import play.twirl.api.Html
+import utils.GitHub.IncorrectResponseStatus
 import utils.{Crypto, DB, GitHub}
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -52,7 +55,7 @@ import scala.xml.{Comment, Node}
 
 class Application @Inject()
   (env: Environment, gitHub: GitHub, db: DB, crypto: Crypto, configuration: Configuration, webJarsUtil: WebJarsUtil)
-  (claSignView: views.html.claSign, claSignedView: views.html.claSigned, claAlreadySignedView: views.html.claAlreadySigned, auditView: views.html.audit, auditReposView: views.html.auditRepos)
+  (claSignView: views.html.claSign, claSignedView: views.html.claSigned, claAlreadySignedView: views.html.claAlreadySigned, auditView: views.html.audit, auditReposView: views.html.auditRepos, auditError: views.html.auditError)
   (implicit ec: ExecutionContext)
   extends InjectedController {
 
@@ -246,6 +249,10 @@ class Application @Inject()
         gitHub.integrationAndUserOrgs(userAccessToken).map { orgs =>
           val orgsWithEncAccessToken = orgs.mapValues(crypto.encryptAES)
           Ok(auditView(orgsWithEncAccessToken, gitHub.integrationSlug, gitHub.clientId))
+        } recover {
+          case e: IncorrectResponseStatus =>
+            // user likely didn't have the right scope
+            Ok(auditError(gitHub.clientId, e.message, gitHubAuthUrl(gitHubOauthScopesForAudit, routes.Application.audit().absoluteURL())))
         }
       }
     }
@@ -344,7 +351,10 @@ class Application @Inject()
   }
 
   private def gitHubAuthUrl(scopes: Seq[String], state: String)(implicit request: RequestHeader): String = {
-    s"https://gitHub.com/login/oauth/authorize?client_id=${gitHub.clientId}&redirect_uri=$redirectUri&scope=${scopes.mkString(",")}&state=$state"
+    val query = Query("client_id" -> gitHub.clientId, "redirect_uri" -> redirectUri, "scope" -> scopes.mkString(" "), "state" -> state)
+    val uri = Uri("https://gitHub.com/login/oauth/authorize")
+
+    uri.withQuery(query).toString()
   }
 
   private def redirectUri(implicit request: RequestHeader): String = {
