@@ -38,15 +38,15 @@ Local Dev Setup
         # CREATE DATABASE salesforcecla ENCODING 'UTF8' OWNER salesforcecla;
         # CREATE DATABASE "salesforcecla-test" ENCODING 'UTF8' OWNER salesforcecla;
 
-1. [Setup a new Integration](https://github.com/settings/integrations) with the following settings:
+1. [Setup a new GitHub App](https://github.com/settings/apps) with the following settings:
     - *Webhook URL* = `https://YOUR_NGROK_ID.ngrok.io/webhook-integration`
     - *Repository administration* = `Read-only`
     - *Commit statuses* = `Read & Write`
     - *Issues* = `Read & Write`
-    - *Pull request* = `Read & Write`
-    - Select *Pull request*
+    - *Pull requests* = `Read & Write`
     - *Repository contents* = `Read-only`
     - *Organization members* = `Read-only`
+    - Under *Subscribe to events* select *Pull request*
 
     It is not required, but if you set the GitHub Integration Secret Token, then set the `GITHUB_INTEGRATION_SECRET_TOKEN` env var accordingly.
 
@@ -54,8 +54,8 @@ Local Dev Setup
 
         export GITHUB_INTEGRATION_PRIVATE_KEY=$(cat ~/somewhere/your-integration.2017-02-07.private-key.pem)
 
-1. Your new Integration will have a numeric id, set the `GITHUB_INTEGRATION_ID` env var accordingly.
-1. Your new Integration will have a slug / URL friendly name, set the `GITHUB_INTEGRATION_SLUG` env var accordingly.
+1. Your new GitHub App will have a numeric id, set the `GITHUB_INTEGRATION_ID` env var accordingly.
+1. Your new GitHub App will have a slug / URL friendly name, set the `GITHUB_INTEGRATION_SLUG` env var accordingly.
 1. Create a new Developer Application on GitHub:
     a. Register a new Developer Application in your org: `https://github.com/organizations/YOUR_ORG/settings/applications/new`
     a. Your callback URL will use your ngrok host: `http://SOMETHING.ngrok.com/_github_oauth_callback`
@@ -70,10 +70,10 @@ Run the Web App
 
 1. Authenticate to GitHub with your test user
 1. Open the audit page: `https://SOMETHING.ngrok.com/audit`
-1. You should see a list of organizations which have the Integration installed and which you are an admin of
+1. You should see a list of organizations which have the GitHub App installed and which you are an admin of
 1. In GitHub edit the `README` file the testing repo and submit a pull request
 1. This will make a webhook request to your local application and validate the CLA status of the submitter
-1. You can see event deliveries in the Developer Settings for your GitHub Integration
+1. You can see event deliveries in the Developer Settings for your GitHub App
 1. If you make a PR with a testing user that is not part of the org, you should see the PR validation failure and be able to sign the CLA
 
 
@@ -84,7 +84,7 @@ Run the Tests
 
 1. For user one, create a new testing organization (because this can't be done via the API).  Add the second user as a member of this org.
 
-1. For user one, install the Integration into the user's account and into the testing org.
+1. For user one, install the GitHub App into the user's account and into the testing org.
 
 1. Set the `GITHUB_TEST_TOKEN1`, `GITHUB_TEST_ORG`, and `GITHUB_TEST_TOKEN2` env vars.
 

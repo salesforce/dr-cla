@@ -1,4 +1,4 @@
-@*
+/*
  * Copyright (c) 2017, salesforce.com, inc.
  * All rights reserved.
  *
@@ -26,35 +26,18 @@
  * ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *@
+ */
 
-@this(webJarsUtil: org.webjars.play.WebJarsUtil, main: main)
+package utils
 
-@(org: String, repos: Seq[_root_.utils.GitHub.Repo], encAccessToken: String)
+import org.flywaydb.play.PlayInitializer
+import play.api.inject.guice.GuiceApplicationBuilder
 
-@repos.map { repo =>
-    <div class="slds-media slds-tile">
-        <div class="slds-media__figure">
-            <div class="slds-icon_container slds-icon-standard-canvas">
-                <span class="slds-icon slds-icon_small octicon octicon-repo"></span>
-            </div>
-        </div>
-        <div class="slds-media__body">
-            <div class="slds-grid slds-grid--align-spread slds-has-flexi-truncate">
-                <p class="slds-tile__title slds-truncate"><a href="https://github.com/@repo.ownerRepo">@repo.ownerRepo</a></p>
-            </div>
-            <div class="slds-tile__detail slds-text-body--small">
-                <div data-href="@routes.Application.auditContributors(org, repo.ownerRepo, encAccessToken)" data-autoload="false">
-                    <button class="slds-button slds-button--brand slds-button--small">
-                        Load Contributor CLA Statuses
-                        @webJarsUtil.locate("slds_spinner.gif").img(Map("alt" -> "Loading...", "class" -> "slds-button__icon slds-button__icon--right", "style" -> "height: 1rem; display: none;"))
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-}
+object ApplyEvolutions extends App {
+  val app = new GuiceApplicationBuilder().build()
 
-@if(repos.isEmpty) {
-    <p>This org does not have any public repos.</p>
+  val playInitializer = app.injector.instanceOf[PlayInitializer]
+  playInitializer.onStart()
+
+  app.stop()
 }

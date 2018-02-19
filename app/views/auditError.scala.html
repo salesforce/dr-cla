@@ -28,33 +28,22 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *@
 
-@this(webJarsUtil: org.webjars.play.WebJarsUtil, main: main)
+@this(main: main, webJarsUtil: org.webjars.play.WebJarsUtil)
 
-@(org: String, repos: Seq[_root_.utils.GitHub.Repo], encAccessToken: String)
+@(oAuthClientId: String, error: String, authUrl: String)
 
-@repos.map { repo =>
-    <div class="slds-media slds-tile">
-        <div class="slds-media__figure">
-            <div class="slds-icon_container slds-icon-standard-canvas">
-                <span class="slds-icon slds-icon_small octicon octicon-repo"></span>
-            </div>
-        </div>
-        <div class="slds-media__body">
-            <div class="slds-grid slds-grid--align-spread slds-has-flexi-truncate">
-                <p class="slds-tile__title slds-truncate"><a href="https://github.com/@repo.ownerRepo">@repo.ownerRepo</a></p>
-            </div>
-            <div class="slds-tile__detail slds-text-body--small">
-                <div data-href="@routes.Application.auditContributors(org, repo.ownerRepo, encAccessToken)" data-autoload="false">
-                    <button class="slds-button slds-button--brand slds-button--small">
-                        Load Contributor CLA Statuses
-                        @webJarsUtil.locate("slds_spinner.gif").img(Map("alt" -> "Loading...", "class" -> "slds-button__icon slds-button__icon--right", "style" -> "height: 1rem; display: none;"))
-                    </button>
-                </div>
-            </div>
-        </div>
-    </div>
-}
+@main("CLA Audit Error") {
 
-@if(repos.isEmpty) {
-    <p>This org does not have any public repos.</p>
+    <h2 class="slds-text-heading--large">
+        Something Went Wrong
+    </h2>
+
+   <p style="margin-top: 20px;">
+        @error
+   </p>
+
+    <p>
+        Try to <a href="@authUrl">login again</a> or <a href="https://github.com/settings/connections/applications/@oAuthClientId">review the OAuth access</a>.
+    </p>
+
 }
