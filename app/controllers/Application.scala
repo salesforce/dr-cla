@@ -291,7 +291,7 @@ class Application @Inject()
   }
 
   private[controllers] def svgSymbol(path: String, symbol: String): Node = {
-    webJarsUtil.locate(path).flatMap { filePath =>
+    webJarsUtil.locate(path).path.flatMap { filePath =>
       val maybeInputStream = env.resourceAsStream(WebJarAssetLocator.WEBJARS_PATH_PREFIX + "/" + filePath)
       maybeInputStream.fold[Try[Node]](Failure(new Exception("Could not read file"))) { inputStream =>
         val elem = scala.xml.XML.load(inputStream)

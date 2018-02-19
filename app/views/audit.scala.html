@@ -48,7 +48,7 @@
                                 <div data-href="@routes.Application.auditRepos(org, encAccessToken)" data-autoload="false">
                                     <button class="slds-button slds-button--brand">
                                         Load Repos
-                                        @Html(webJarsUtil.img(webJarsUtil.url("slds_spinner.gif"), Map("alt" -> "Loading...", "class" -> "slds-button__icon slds-button__icon--right", "style" -> "height: 1rem; display: none;")))
+                                        @webJarsUtil.locate("slds_spinner.gif").img(Map("alt" -> "Loading...", "class" -> "slds-button__icon slds-button__icon--right", "style" -> "height: 1rem; display: none;"))
                                     </button>
                                 </div>
                             </li>

@@ -30,7 +30,7 @@
 
 @this(webJarsUtil: org.webjars.play.WebJarsUtil, main: main)
 
-@(org: String, repos: Seq[utils.GitHub.Repo], encAccessToken: String)
+@(org: String, repos: Seq[_root_.utils.GitHub.Repo], encAccessToken: String)
 
 @repos.map { repo =>
     <div class="slds-media slds-tile">
@@ -47,7 +47,7 @@
                 <div data-href="@routes.Application.auditContributors(org, repo.ownerRepo, encAccessToken)" data-autoload="false">
                     <button class="slds-button slds-button--brand slds-button--small">
                         Load Contributor CLA Statuses
-                        @Html(webJarsUtil.img(webJarsUtil.url("slds_spinner.gif"), Map("alt" -> "Loading...", "class" -> "slds-button__icon slds-button__icon--right", "style" -> "height: 1rem; display: none;")))
+                        @webJarsUtil.locate("slds_spinner.gif").img(Map("alt" -> "Loading...", "class" -> "slds-button__icon slds-button__icon--right", "style" -> "height: 1rem; display: none;"))
                     </button>
                 </div>
             </div>
