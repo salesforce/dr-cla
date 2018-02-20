@@ -327,11 +327,25 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   }
 
   // todo: do not re-apply an existing label
-  def toggleLabel(ownerRepo: String, newLabel: String, oldLabel: String, issueNumber: Int, accessToken: String): Future[JsValue] = {
-    val applyLabelFuture = applyLabel(ownerRepo, newLabel, issueNumber, accessToken)
+  def toggleLabel(ownerRepo: String, newLabel: String, oldLabel: String, issueNumber: Int, accessToken: String): Future[Option[JsValue]] = {
+    getIssueLabels(ownerRepo, issueNumber, accessToken).flatMap { json =>
+      val issueLabels = json.value.map(_.\("name").as[String])
 
-    removeLabel(ownerRepo, oldLabel, issueNumber, accessToken).flatMap(_ => applyLabelFuture).recoverWith {
-      case _ => applyLabelFuture
+      val removeLabelFuture = if (issueLabels.contains(oldLabel)) {
+        removeLabel(ownerRepo, oldLabel, issueNumber, accessToken)
+      }
+      else {
+        Future.successful(())
+      }
+
+      removeLabelFuture.flatMap { _ =>
+        if (!issueLabels.contains(newLabel)) {
+          applyLabel(ownerRepo, newLabel, issueNumber, accessToken).map(Some(_))
+        }
+        else {
+          Future.successful(None)
+        }
+      }
     }
   }
 
@@ -676,7 +690,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     }
   }
 
-  def updatePullRequestLabel(ownerRepo: String, prNumber: Int, hasExternalContributors: Boolean, hasMissingClas: Boolean, accessToken: String): Future[JsValue] = {
+  def updatePullRequestLabel(ownerRepo: String, prNumber: Int, hasExternalContributors: Boolean, hasMissingClas: Boolean, accessToken: String): Future[Option[JsValue]] = {
     if (hasExternalContributors) {
       if (hasMissingClas) {
         toggleLabel(ownerRepo, "cla:missing", "cla:signed", prNumber, accessToken)
@@ -686,7 +700,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
       }
     }
     else {
-      Future.successful(Json.obj())
+      Future.successful(None)
     }
   }
 

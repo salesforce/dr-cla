@@ -282,10 +282,6 @@ class Application @Inject()
           }
         }
       }
-
-      // validate PR
-
-      // show status of PR
     }
   }
 
