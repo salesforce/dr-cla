@@ -55,7 +55,7 @@ import scala.xml.{Comment, Node}
 
 class Application @Inject()
   (env: Environment, gitHub: GitHub, db: DB, crypto: Crypto, configuration: Configuration, webJarsUtil: WebJarsUtil)
-  (claSignView: views.html.claSign, claSignedView: views.html.claSigned, claAlreadySignedView: views.html.claAlreadySigned, auditView: views.html.audit, auditReposView: views.html.auditRepos, auditError: views.html.auditError)
+  (claSignView: views.html.claSign, claSignedView: views.html.claSigned, claAlreadySignedView: views.html.claAlreadySigned, claStatusView: views.html.claStatus, auditView: views.html.audit, auditReposView: views.html.auditRepos, auditError: views.html.auditError)
   (implicit ec: ExecutionContext)
   extends InjectedController {
 
@@ -94,7 +94,7 @@ class Application @Inject()
   def signCla = Action.async { implicit request =>
     getGitHubAuthInfo(request).flatMap { maybeGitHubAuthInfo =>
       val claSignatureExistsFuture = maybeGitHubAuthInfo.fold(Future.unit) { gitHubAuthInfo =>
-        db.findClaSignaturesByGitHubIds(Set(gitHubAuthInfo.userName)).flatMap { claSignatures =>
+        db.findClaSignaturesByGitHubIds(Set(GitHub.GitHubUser(gitHubAuthInfo.userName))).flatMap { claSignatures =>
           claSignatures.headOption.fold(Future.unit) { claSignature =>
             Future.failed(AlreadyExistsException(claSignature))
           }
@@ -131,7 +131,7 @@ class Application @Inject()
             contact <- maybeContact.fold {
               db.createContact(Contact(-1, maybeFirstName, lastName, email, username))
             } (Future.successful)
-            existingClaSignatures <- db.findClaSignaturesByGitHubIds(Set(username))
+            existingClaSignatures <- db.findClaSignaturesByGitHubIds(Set(GitHub.GitHubUser(username)))
             claSignature <- existingClaSignatures.headOption.fold {
               Future.successful(ClaSignature(-1, contact.gitHubId, LocalDateTime.now(), claVersion))
             } { existingClaSignature =>
@@ -174,11 +174,11 @@ class Application @Inject()
     override def getMessage: String = "A pull request could not be found"
   }
 
-  private def handlePullRequest(jsValue: JsValue, token: String)(implicit request: RequestHeader): Future[Iterable[JsObject]] = {
-    (jsValue \ "pull_request").asOpt[JsValue].fold(Future.failed[Iterable[JsObject]](NoPullRequest())) { pullRequest =>
+  private def handlePullRequest(jsValue: JsValue, token: String)(implicit request: RequestHeader): Future[(Set[GitHub.Contributor], Set[GitHub.Contributor], JsObject)] = {
+    (jsValue \ "pull_request").asOpt[JsValue].fold(Future.failed[(Set[GitHub.Contributor], Set[GitHub.Contributor], JsObject)](NoPullRequest())) { pullRequest =>
       for {
-        pullRequestsToValidate <- gitHub.pullRequestsToValidate(pullRequest, token)
-        validate <- validatePullRequests(pullRequestsToValidate)
+        pullRequestWithDetails <- gitHub.pullRequestWithCommitsAndStatus(token)(pullRequest)
+        validate <- validatePullRequest(pullRequestWithDetails, token)
       } yield validate
     }
   }
@@ -260,13 +260,23 @@ class Application @Inject()
         val id = (installation \ "id").as[Int]
         gitHub.installationAccessTokens(id).flatMap { installationAccessTokenJson =>
           val installationAccessToken = (installationAccessTokenJson \ "token").as[String]
+          val ownerRepo = org + "/" + repo
 
-          gitHub.getPullRequest(org + "/" + repo, prNum, installationAccessToken).flatMap { pullRequest =>
-            gitHub.pullRequestsToValidate(pullRequest, installationAccessToken).flatMap { pullRequests =>
-              validatePullRequests(pullRequests).flatMap { statuses =>
-                println(statuses)
+          gitHub.repo(ownerRepo)(installationAccessToken).flatMap { repoJson =>
+            val isPrivate = (repoJson \ "private").as[Boolean]
 
-                ???
+            if (isPrivate) {
+              Future.successful(NotFound)
+            }
+            else {
+              gitHub.getPullRequest(ownerRepo, prNum, installationAccessToken).flatMap { pullRequest =>
+                gitHub.pullRequestWithCommitsAndStatus(installationAccessToken)(pullRequest).flatMap { pullRequestDetails =>
+                  validatePullRequest(pullRequestDetails, installationAccessToken).map {
+                    case (_, claMissing, _) =>
+                      val claUrl = routes.Application.signCla().absoluteURL()
+                      Ok(claStatusView(org, repo, prNum, claMissing, claUrl))
+                  }
+                }
               }
             }
           }
@@ -305,10 +315,11 @@ class Application @Inject()
     val allContributorsFuture = gitHub.repoContributors(ownerRepo, accessToken)
 
     for {
-      collaborators <- collaboratorsFuture.map(gitHub.logins)
+      collaborators <- collaboratorsFuture
       allContributors <- allContributorsFuture.map(gitHub.contributorLoginsAndContributions)
       externalContributors = gitHub.externalContributors(allContributors.keySet, collaborators)
-      clasForExternalContributors <- db.findClaSignaturesByGitHubIds(externalContributors)
+      gitHubUsers = externalContributors.collect { case gitHubUser: GitHub.GitHubUser => gitHubUser }
+      clasForExternalContributors <- db.findClaSignaturesByGitHubIds(gitHubUsers)
     } yield {
 
       val externalContributorsDetails = externalContributors.map { gitHubId =>
@@ -317,10 +328,10 @@ class Application @Inject()
         gitHubId -> (maybeClaSignature, commits)
       }.toMap
 
-      val internalContributorsWithCommits = collaborators.flatMap { login =>
-        val maybeContributions = allContributors.get(login)
-        maybeContributions.fold(Set.empty[(String, Int)]) { contributions =>
-          Set(login -> contributions)
+      val internalContributorsWithCommits = collaborators.flatMap { contributor =>
+        val maybeContributions = allContributors.get(contributor)
+        maybeContributions.fold(Set.empty[(GitHub.Contributor, Int)]) { contributions =>
+          Set(contributor -> contributions)
         }
       }.toMap
 
@@ -374,17 +385,27 @@ class Application @Inject()
     }
   }
 
-  private def validatePullRequests(pullRequestsToBeValidated: Map[JsObject, String])(implicit request: RequestHeader): Future[Iterable[JsObject]] = {
-    //val claUrl = routes.Application.signCla().absoluteURL()
-    val statusUrl = (ownerRepo: String, prNum: Int) => routes.Application.status(ownerRepo, prNum).absoluteURL()
-    gitHub.validatePullRequests(pullRequestsToBeValidated, statusUrl) { externalCommitters =>
-      db.findClaSignaturesByGitHubIds(externalCommitters)
+  private def validatePullRequest(pullRequestToBeValidated: JsObject, token: String)(implicit request: RequestHeader): Future[(Set[GitHub.Contributor], Set[GitHub.Contributor], JsObject)] = {
+    val claUrl = routes.Application.signCla().absoluteURL()
+    val statusUrl = (owner: String, repo: String, prNum: Int) => routes.Application.status(owner, repo, prNum).absoluteURL()
+    gitHub.validatePullRequest(pullRequestToBeValidated, token, claUrl, statusUrl) { externalCommitters =>
+      val gitHubUsers = externalCommitters.collect { case gitHubUser: GitHub.GitHubUser => gitHubUser }
+      db.findClaSignaturesByGitHubIds(gitHubUsers)
+    }
+  }
+
+  private def validatePullRequests(pullRequestsToBeValidated: Map[JsObject, String])(implicit request: RequestHeader): Future[Iterable[(Set[GitHub.Contributor], Set[GitHub.Contributor], JsObject)]] = {
+    val claUrl = routes.Application.signCla().absoluteURL()
+    val statusUrl = (owner: String, repo: String, prNum: Int) => routes.Application.status(owner, repo, prNum).absoluteURL()
+    gitHub.validatePullRequests(pullRequestsToBeValidated, claUrl, statusUrl) { externalCommitters =>
+      val gitHubUsers = externalCommitters.collect { case gitHubUser: GitHub.GitHubUser => gitHubUser }
+      db.findClaSignaturesByGitHubIds(gitHubUsers)
     }
   }
 
   // When someone signs the CLA we don't know what PR we need to update.
   // So get all the PRs we have access to, that have the contributor which just signed the CLA and where the status is failed.
-  private def revalidatePullRequests(signerGitHubId: String)(implicit request: RequestHeader): Future[Iterable[JsObject]] = {
+  private def revalidatePullRequests(signerGitHubId: String)(implicit request: RequestHeader): Future[Iterable[(Set[GitHub.Contributor], Set[GitHub.Contributor], JsObject)]] = {
     for {
       pullRequestsToBeValidated <- gitHub.pullRequestsToBeValidated(signerGitHubId)
       validation <- validatePullRequests(pullRequestsToBeValidated)

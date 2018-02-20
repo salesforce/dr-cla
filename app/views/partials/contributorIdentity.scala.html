@@ -30,26 +30,13 @@
 
 @import _root_.utils.GitHub
 
-@this(webJarsUtil: org.webjars.play.WebJarsUtil, main: main)
+@(contributor: GitHub.Contributor)
 
-@(org: String, repo: String, prNum: Int, missingCla: Set[GitHub.Contributor], claUrl: String)
-
-@main("CLA Status", true) {
-
-    <h2 class="slds-text-heading--large" style="margin-bottom: 20px;">CLA Status for <a href="https://github.com/@org/@repo/pull/@prNum">@org/@repo#@prNum</a></h2>
-
-    @if(missingCla.nonEmpty) {
-        One or more contributors to that Pull Request need to <a href="@claUrl">sign the CLA</a>:
-        @* todo: info for unknownCommitters *@
-
-        <ul class="slds-list_dotted" style="margin-left: 25px;">
-            @for(contributor <- missingCla) {
-                <li class="slds-list__item">
-                    @partials.contributorIdentity(contributor)
-                </li>
-            }
-        </ul>
-    } else {
-        All external contributors have signed the CLA
+@contributor match {
+    case gitHubUser: GitHub.GitHubUser => {
+        <a href="https://github.com/@gitHubUser.username" style="display: inline;">@gitHubUser.username</a>
+    }
+    case unknownCommitter: GitHub.UnknownCommitter => {
+        @unknownCommitter.toStringOpt.getOrElse("Unknown user")
     }
 }
