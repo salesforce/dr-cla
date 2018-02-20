@@ -515,7 +515,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     }
   }
 
-// todo: optimize this
+  // todo: optimize this
   private def pullRequestsNeedingValidationForAccessToken(signerGitHubId: String, repos: Seq[JsObject], accessToken: String): Future[Map[JsObject, String]] = {
     val repoNames = repos.map(_.\("full_name").as[String]).toSet
 
@@ -668,27 +668,29 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     }
   }
 
-  def validatePullRequests(pullRequests: Map[JsObject, String], claUrl: String)(clasForCommitters: (Set[String]) => Future[Set[ClaSignature]]): Future[Iterable[JsObject]] = {
+  def validatePullRequests(pullRequests: Map[JsObject, String], statusUrlF: (String, Int) => String)(clasForCommitters: (Set[String]) => Future[Set[ClaSignature]]): Future[Iterable[JsObject]] = {
     Future.sequence {
       pullRequests.map { case (pullRequest, token) =>
         val ownerRepo = (pullRequest \ "pull_request" \ "base" \ "repo" \ "full_name").as[String]
         val prNumber = (pullRequest \ "pull_request" \ "number").as[Int]
         val sha = (pullRequest \ "pull_request" \ "head" \ "sha").as[String]
 
+        val statusUrl = statusUrlF(ownerRepo, prNumber)
+
         val pullRequestStatusFuture = for {
-          _ <- createStatus(ownerRepo, sha, "pending", claUrl, "The CLA verifier is running", "salesforce-cla", token)
+          _ <- createStatus(ownerRepo, sha, "pending", statusUrl, "The CLA verifier is running", "salesforce-cla", token)
           externalContributors <- externalContributorsForPullRequest(ownerRepo, prNumber, sha, token)
           committersWithoutClas <- committersWithoutClas(externalContributors)(clasForCommitters)
-          _ <- missingClaComment(ownerRepo, prNumber, sha, claUrl, committersWithoutClas, token)
+          _ <- missingClaComment(ownerRepo, prNumber, sha, statusUrl, committersWithoutClas, token)
           _ <- updatePullRequestLabel(ownerRepo, prNumber, externalContributors.nonEmpty, committersWithoutClas.nonEmpty, token)
           (state, description) = if (committersWithoutClas.isEmpty) ("success", "All contributors have signed the CLA") else ("failure", "One or more contributors need to sign the CLA")
-          pullRequestStatus <- createStatus(ownerRepo, sha, state, claUrl, description, "salesforce-cla", token)
+          pullRequestStatus <- createStatus(ownerRepo, sha, state, statusUrl, description, "salesforce-cla", token)
         } yield pullRequestStatus
 
         pullRequestStatusFuture.recoverWith {
           case e: GitHub.AuthorLoginNotFound =>
-            authorLoginNotFoundComment(ownerRepo, prNumber, claUrl, e, token).flatMap { _ =>
-              createStatus(ownerRepo, sha, "error", claUrl, e.getMessage, "salesforce-cla", token)
+            authorLoginNotFoundComment(ownerRepo, prNumber, statusUrl, e, token).flatMap { _ =>
+              createStatus(ownerRepo, sha, "error", statusUrl, e.getMessage, "salesforce-cla", token)
             }
         }
       }

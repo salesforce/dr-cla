@@ -239,6 +239,46 @@ class Application @Inject()
     }
   }
 
+  def status(org: String, repo: String, prNum: Int) = Action.async { implicit request =>
+    gitHub.integrationInstallations().flatMap { installations =>
+      val maybeInstallation = installations.as[Seq[JsObject]].find { installation =>
+        val targetType = (installation \ "target_type").as[String]
+        val repositorySelection = (installation \ "repository_selection").as[String]
+        val accountLogin = (installation \ "account" \ "login").as[String]
+
+        val orgWithAllRepos = targetType == "Organization" && repositorySelection == "all" && accountLogin == org
+
+        // todo: other possible scenarios (some repos, user owned, etc)
+
+        orgWithAllRepos
+      }
+
+      maybeInstallation.fold {
+        // no access
+        Future.successful(BadRequest("Can't get status for that repo"))
+      } { installation =>
+        val id = (installation \ "id").as[Int]
+        gitHub.installationAccessTokens(id).flatMap { installationAccessTokenJson =>
+          val installationAccessToken = (installationAccessTokenJson \ "token").as[String]
+
+          gitHub.getPullRequest(org + "/" + repo, prNum, installationAccessToken).flatMap { pullRequest =>
+            gitHub.pullRequestsToValidate(pullRequest, installationAccessToken).flatMap { pullRequests =>
+              validatePullRequests(pullRequests).flatMap { statuses =>
+                println(statuses)
+
+                ???
+              }
+            }
+          }
+        }
+      }
+
+      // validate PR
+
+      // show status of PR
+    }
+  }
+
   def audit = Action.async { implicit request =>
     getGitHubAuthInfo(request).flatMap { maybeGitHubAuthInfo =>
       maybeGitHubAuthInfo.fold {
@@ -335,8 +375,9 @@ class Application @Inject()
   }
 
   private def validatePullRequests(pullRequestsToBeValidated: Map[JsObject, String])(implicit request: RequestHeader): Future[Iterable[JsObject]] = {
-    val claUrl = routes.Application.signCla().absoluteURL()
-    gitHub.validatePullRequests(pullRequestsToBeValidated, claUrl) { externalCommitters =>
+    //val claUrl = routes.Application.signCla().absoluteURL()
+    val statusUrl = (ownerRepo: String, prNum: Int) => routes.Application.status(ownerRepo, prNum).absoluteURL()
+    gitHub.validatePullRequests(pullRequestsToBeValidated, statusUrl) { externalCommitters =>
       db.findClaSignaturesByGitHubIds(externalCommitters)
     }
   }
