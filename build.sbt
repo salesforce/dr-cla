@@ -7,10 +7,6 @@ name := "salesforce-cla"
 
 scalaVersion := "2.12.4"
 
-fork in run := true
-
-javaOptions in run += "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=5005"
-
 resolvers ++= Seq(Resolver.mavenLocal, Resolver.jcenterRepo)
 
 libraryDependencies ++= Seq(
