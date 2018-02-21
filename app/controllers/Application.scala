@@ -105,7 +105,7 @@ class Application @Inject()
 
       claSignatureExistsFuture.map { _ =>
         val authUrl = gitHubAuthUrl(gitHubOauthScopesForClaSigning, routes.Application.signCla().absoluteURL())
-        Ok(claSignView(latestClaVersion, authUrl, maybeGitHubAuthInfo, latestClaVersion, claText(latestClaVersion), svgInline))
+        Ok(claSignView(latestClaVersion, authUrl, maybeGitHubAuthInfo, latestClaVersion, claText(latestClaVersion), svgInline, organizationName))
       } recover {
         case AlreadyExistsException(claSignature) =>
           BadRequest(claAlreadySignedView(claSignature.signedOn))
@@ -160,7 +160,7 @@ class Application @Inject()
       }
     } recover {
       case AlreadyExistsException(claSignature) =>
-        BadRequest(claAlreadySignedView(claSignature.signedOn))
+        BadRequest(claAlreadySignedView(claSignature.signedOn, organizationName))
       case e: Throwable =>
         Logger.error("CLA could not be signed.", e)
         InternalServerError("Could not sign the CLA, please contact oss-cla@salesforce.com")
@@ -169,7 +169,7 @@ class Application @Inject()
   }
 
   def signedCla = Action {
-    Ok(claSignedView())
+    Ok(claSignedView(organizationName))
   }
 
   case class NoPullRequest() extends Exception {
