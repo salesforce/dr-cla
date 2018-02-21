@@ -649,7 +649,7 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
   "GitHub.pullRequestUserCommitters" must {
     "work" in {
       val pullRequestUserCommitters = await(gitHub.pullRequestUserCommitters(testInternalPullRequestOwnerRepo, testInternalPullRequestNum, testInternalPullRequestSha, testIntegrationToken))
-      pullRequestUserCommitters must equal (Set(testLogin1))
+      pullRequestUserCommitters must equal (Set(GitHub.GitHubUser(testLogin1)))
     }
     "fail with non-github user contributors" in {
       // todo: but hard to simulate
@@ -738,7 +738,7 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
   }
 
   "repoContributors" should {
-    "worl" in {
+    "work" in {
       val repoContributros = await(gitHub.repoContributors(testOrgRepo, testIntegrationToken))
       repoContributros.value.exists(_.\("login").as[String] == testLogin1) must be (true)
     }
