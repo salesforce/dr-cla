@@ -28,42 +28,28 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *@
 
-@import java.time.LocalDateTime
-@import java.time.format.DateTimeFormatter
 @import _root_.utils.GitHub
 
-@(externalContributors: Map[GitHub.Contributor, (Option[ClaSignature], Int)], internalContributors: Map[GitHub.Contributor, Int])
+@this(webJarsUtil: org.webjars.play.WebJarsUtil, main: main)
 
-@dateFormat(dateTime: LocalDateTime) = @{
-    dateTime.format(DateTimeFormatter.ofPattern("MMM dd, yyyy"))
-}
+@(org: String, repo: String, prNum: Int, missingCla: Set[GitHub.Contributor], claUrl: String)
 
-@if(internalContributors.nonEmpty) {
-    Internal Contributors:
-    <ul class="slds-list--vertical slds-has-block-links" style="margin-left: 15px;">
-        @for((contributor, commits) <- internalContributors) {
-            <li class="slds-list__item">
-                @partials.contributorIdentity(contributor)
-            </li>
-        }
-    </ul>
-}
+@main("CLA Status", true) {
 
-@if(externalContributors.nonEmpty) {
-    External Contributors:
-    <ul class="slds-list--vertical slds-has-block-links" style="margin-left: 15px;">
-        @for((contributor, (maybeClaSignature, commits)) <- externalContributors) {
-            <li class="slds-list__item" style="margin-top: 4px; margin-bottom: 4px;">
-                @partials.contributorIdentity(contributor)
+    <h2 class="slds-text-heading--large" style="margin-bottom: 20px;">CLA Status for <a href="https://github.com/@org/@repo/pull/@prNum">@org/@repo#@prNum</a></h2>
 
-                (@commits commits)
+    @if(missingCla.nonEmpty) {
+        One or more contributors to that Pull Request need to <a href="@claUrl">sign the CLA</a>:
+        @* todo: info for unknownCommitters *@
 
-                @maybeClaSignature.fold {
-                    <span class="slds-badge" style="background-color: #ff0000; color: #000000; font-weight: bold; vertical-align: middle;">CLA has not been signed</span>
-                } { claSignature =>
-                    <span class="slds-badge" style="vertical-align: middle">CLA signed on @dateFormat(claSignature.signedOn)</span>
-                }
-            </li>
-        }
-    </ul>
+        <ul class="slds-list_dotted" style="margin-left: 25px;">
+            @for(contributor <- missingCla) {
+                <li class="slds-list__item">
+                    @partials.contributorIdentity(contributor)
+                </li>
+            }
+        </ul>
+    } else {
+        All external contributors have signed the CLA
+    }
 }
