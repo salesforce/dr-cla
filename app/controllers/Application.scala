@@ -64,9 +64,11 @@ class Application @Inject()
 
   val gitHubOauthScopesForClaSigning = Seq("user:email")
   val gitHubOauthScopesForAudit = Seq("read:org")
+  val organizationName = configuration.get[String]("app.organization.name")
+  val organizationUrl = configuration.get[String]("app.organization.url")
 
   def index = Action {
-    Redirect("http://my.sonatype.com/")
+    Redirect(organizationUrl)
   }
 
   def wellKnown(key: String) = Action {
@@ -248,7 +250,7 @@ class Application @Inject()
 
         gitHub.integrationAndUserOrgs(userAccessToken).map { orgs =>
           val orgsWithEncAccessToken = orgs.mapValues(crypto.encryptAES)
-          Ok(auditView(orgsWithEncAccessToken, gitHub.integrationSlug, gitHub.clientId))
+          Ok(auditView(orgsWithEncAccessToken, gitHub.integrationSlug, gitHub.clientId, organizationName))
         } recover {
           case e: IncorrectResponseStatus =>
             // user likely didn't have the right scope
