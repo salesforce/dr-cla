@@ -64,7 +64,7 @@ class Application @Inject()
 
   val gitHubOauthScopesForClaSigning = Seq("user:email")
   val gitHubOauthScopesForAudit = Seq("read:org")
-  val organizationName = configuration.get[String]("app.organization.name")
+  val maybeOrganizationName = configuration.getOptional[String]("app.organization.name")
   val maybeOrganizationUrl = configuration.getOptional[String]("app.organization.url")
 
   def isEmpty(x: String) = x == null || x.isEmpty
@@ -107,10 +107,10 @@ class Application @Inject()
 
       claSignatureExistsFuture.map { _ =>
         val authUrl = gitHubAuthUrl(gitHubOauthScopesForClaSigning, routes.Application.signCla().absoluteURL())
-        Ok(claSignView(latestClaVersion, authUrl, maybeGitHubAuthInfo, latestClaVersion, claText(latestClaVersion), svgInline, organizationName))
+        Ok(claSignView(latestClaVersion, authUrl, maybeGitHubAuthInfo, latestClaVersion, claText(latestClaVersion), svgInline, maybeOrganizationName))
       } recover {
         case AlreadyExistsException(claSignature) =>
-          BadRequest(claAlreadySignedView(claSignature.signedOn, organizationName))
+          BadRequest(claAlreadySignedView(claSignature.signedOn, maybeOrganizationName))
       }
     }
   }
@@ -162,7 +162,7 @@ class Application @Inject()
       }
     } recover {
       case AlreadyExistsException(claSignature) =>
-        BadRequest(claAlreadySignedView(claSignature.signedOn, organizationName))
+        BadRequest(claAlreadySignedView(claSignature.signedOn, maybeOrganizationName))
       case e: Throwable =>
         Logger.error("CLA could not be signed.", e)
         InternalServerError("Could not sign the CLA, please contact oss-cla@salesforce.com")
@@ -171,7 +171,7 @@ class Application @Inject()
   }
 
   def signedCla = Action {
-    Ok(claSignedView(organizationName))
+    Ok(claSignedView(maybeOrganizationName))
   }
 
   case class NoPullRequest() extends Exception {
@@ -252,7 +252,7 @@ class Application @Inject()
 
         gitHub.integrationAndUserOrgs(userAccessToken).map { orgs =>
           val orgsWithEncAccessToken = orgs.mapValues(crypto.encryptAES)
-          Ok(auditView(orgsWithEncAccessToken, gitHub.integrationSlug, gitHub.clientId, organizationName))
+          Ok(auditView(orgsWithEncAccessToken, gitHub.integrationSlug, gitHub.clientId, maybeOrganizationName))
         } recover {
           case e: IncorrectResponseStatus =>
             // user likely didn't have the right scope
