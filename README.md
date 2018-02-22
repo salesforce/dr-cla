@@ -60,7 +60,10 @@ Local Dev Setup
     a. Register a new Developer Application in your org: `https://github.com/organizations/YOUR_ORG/settings/applications/new`
     a. Your callback URL will use your ngrok host: `http://SOMETHING.ngrok.com/_github_oauth_callback`
     a. Set the `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` env vars accordingly
-
+1. Set the following environment variables to values that work for your use:
+    - *ORG_NAME* = `Salesforce`
+    - *ORG_URL* = `http://salesforce.github.io/` 
+    
 Run the Web App
 ---------------
 

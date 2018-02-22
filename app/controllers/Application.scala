@@ -67,8 +67,14 @@ class Application @Inject()
   val organizationName = configuration.get[String]("app.organization.name")
   val organizationUrl = configuration.get[String]("app.organization.url")
 
+  def isEmpty(x: String) = x == null || x.isEmpty
+
   def index = Action {
-    Redirect(organizationUrl)
+    if(organizationUrl.isEmpty()) {
+      Redirect(routes.Application.signCla())
+    } else {
+      Redirect(organizationUrl)
+    }
   }
 
   def wellKnown(key: String) = Action {
@@ -108,7 +114,7 @@ class Application @Inject()
         Ok(claSignView(latestClaVersion, authUrl, maybeGitHubAuthInfo, latestClaVersion, claText(latestClaVersion), svgInline, organizationName))
       } recover {
         case AlreadyExistsException(claSignature) =>
-          BadRequest(claAlreadySignedView(claSignature.signedOn))
+          BadRequest(claAlreadySignedView(claSignature.signedOn, organizationName))
       }
     }
   }
