@@ -30,13 +30,13 @@
 
 @this(webJarsUtil: org.webjars.play.WebJarsUtil, main: main)
 
-@(version: String, authUrl: String, maybeGitHubAuthInfo: Option[GitHubAuthInfo], claVersion: String, claText: String, svgInline: (String, String) => Html, organizationName: String)
+@(version: String, authUrl: String, maybeGitHubAuthInfo: Option[GitHubAuthInfo], claVersion: String, claText: String, svgInline: (String, String) => Html, maybeOrganizationName: Option[String])
 
 @import scala.util.Success
 
-@main("Sign the " + organizationName + " CLA") {
+@main("Sign the " + maybeOrganizationName + " CLA") {
 
-    <h2 class="slds-text-heading--large" style="margin-bottom: 20px;">Sign the @organizationName Contributor License Agreement (CLA)</h2>
+    <h2 class="slds-text-heading--large" style="margin-bottom: 20px;">Sign the @maybeOrganizationName Contributor License Agreement (CLA)</h2>
 
     <ul class="slds-timeline slds-container--left">
         <li class="slds-timeline__item">

@@ -30,10 +30,10 @@
 
 @this(main: main)
 
-@(organizationName: String)
+@(maybeOrganizationName: Option[String])
 
-@main(organizationName + " CLA Signed") {
+@main(maybeOrganizationName + " CLA Signed") {
 
-    <h2 class="slds-text-heading--large">Thanks for signing the @organizationName CLA!</h2>
+    <h2 class="slds-text-heading--large">Thanks for signing the @maybeOrganizationName CLA!</h2>
 
 }

@@ -32,9 +32,9 @@
 
 @this(main: main)
 
-@(signedOn: java.time.LocalDateTime, organizationName: String)
+@(signedOn: java.time.LocalDateTime, maybeOrganizationName: Option[String])
 
-@main(organizationName + " CLA Signed") {
+@main(maybeOrganizationName + " CLA Signed") {
 
     <h2 class="slds-text-heading--large">You already signed the CLA on @signedOn.format(DateTimeFormatter.ISO_LOCAL_DATE)</h2>
 }
