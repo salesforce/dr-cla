@@ -38,6 +38,13 @@ Local Dev Setup
         # CREATE DATABASE salesforcecla ENCODING 'UTF8' OWNER salesforcecla;
         # CREATE DATABASE "salesforcecla-test" ENCODING 'UTF8' OWNER salesforcecla;
 
+
+1. Setup a new oAuth App
+    - This will be at: `https://github.com/organizations/{your-organization}/settings/applications/new`
+    - *Application name* = `Something descriptive`
+    - *Authorization callback URL* = `https://YOUR_NGROK_ID.ngrok.io/_github_oauth_callback`
+    - *Homepage URL* = `https://YOUR_NGROK_ID.ngrok.io/`
+    - Once finished, set the `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` env vars accordingly
 1. [Setup a new GitHub App](https://github.com/settings/apps) with the following settings:
     - *Webhook URL* = `https://YOUR_NGROK_ID.ngrok.io/webhook-integration`
     - *Repository administration* = `Read-only`
@@ -56,14 +63,7 @@ Local Dev Setup
 
 1. Your new GitHub App will have a numeric id, set the `GITHUB_INTEGRATION_ID` env var accordingly.
 1. Your new GitHub App will have a slug / URL friendly name, set the `GITHUB_INTEGRATION_SLUG` env var accordingly.
-1. Create a new Developer Application on GitHub:
-    a. Register a new Developer Application in your org: `https://github.com/organizations/YOUR_ORG/settings/applications/new`
-    a. Your callback URL will use your ngrok host: `http://SOMETHING.ngrok.com/_github_oauth_callback`
-    a. Set the `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` env vars accordingly
-1. Set the following environment variables to values that work for your use:
-    - *ORG_NAME* = `Salesforce`
-    - *ORG_URL* = `http://salesforce.github.io/` 
-    
+
 Run the Web App
 ---------------
 

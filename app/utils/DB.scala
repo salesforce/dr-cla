@@ -83,9 +83,9 @@ class DB @Inject()(database: Database)(implicit ec: ExecutionContext) {
     queryResult.map(newId => claSignature.copy(id = newId))
   }
 
-  def findClaSignaturesByGitHubIds(gitHubIds: Set[String]): Future[Set[ClaSignature]] = {
+  def findClaSignaturesByGitHubIds(gitHubIds: Set[GitHub.GitHubUser]): Future[Set[ClaSignature]] = {
     val queryResult = run {
-      claSignatures.filter(claSignature => liftQuery(gitHubIds).contains(claSignature.contactGitHubId))
+      claSignatures.filter(claSignature => liftQuery(gitHubIds.map(_.username)).contains(claSignature.contactGitHubId))
     }
 
     queryResult.map(_.toSet)
