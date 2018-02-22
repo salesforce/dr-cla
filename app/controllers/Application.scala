@@ -65,16 +65,12 @@ class Application @Inject()
   val gitHubOauthScopesForClaSigning = Seq("user:email")
   val gitHubOauthScopesForAudit = Seq("read:org")
   val organizationName = configuration.get[String]("app.organization.name")
-  val organizationUrl = configuration.get[String]("app.organization.url")
+  val maybeOrganizationUrl = configuration.getOptional[String]("app.organization.url")
 
   def isEmpty(x: String) = x == null || x.isEmpty
 
   def index = Action {
-    if(organizationUrl.isEmpty()) {
-      Redirect(routes.Application.signCla())
-    } else {
-      Redirect(organizationUrl)
-    }
+    maybeOrganizationUrl.fold(Redirect(routes.Application.signCla()))(Redirect(_))
   }
 
   def wellKnown(key: String) = Action {
