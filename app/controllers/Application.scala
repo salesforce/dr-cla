@@ -56,6 +56,7 @@ import scala.xml.{Comment, Node}
 class Application @Inject()
   (env: Environment, gitHub: GitHub, db: DB, crypto: Crypto, configuration: Configuration, webJarsUtil: WebJarsUtil)
   (claSignView: views.html.claSign, claSignedView: views.html.claSigned, claAlreadySignedView: views.html.claAlreadySigned, claStatusView: views.html.claStatus, auditView: views.html.audit, auditReposView: views.html.auditRepos, auditError: views.html.auditError)
+  (viewHelper: helpers.ViewHelpers)
   (implicit ec: ExecutionContext)
   extends InjectedController {
 
@@ -64,10 +65,9 @@ class Application @Inject()
 
   val gitHubOauthScopesForClaSigning = Seq("user:email")
   val gitHubOauthScopesForAudit = Seq("read:org")
-  val maybeOrganizationUrl = configuration.getOptional[String]("app.organization.url")
 
   def index = Action {
-    maybeOrganizationUrl.fold(Redirect(routes.Application.signCla()))(Redirect(_))
+    viewHelper.organizationUrl().fold(Redirect(routes.Application.signCla()))(Redirect(_))
   }
 
   def wellKnown(key: String) = Action {

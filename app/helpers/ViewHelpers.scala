@@ -38,6 +38,7 @@ class ViewHelpers @Inject()
 (configuration: Configuration ) {
   val maybeOrganizationName = configuration.getOptional[String]("app.organization.name")
   val maybeOrganizationLogoUrl = configuration.getOptional[String]("app.organization.logo-url")
+  val maybeOrganizationUrl = configuration.getOptional[String]("app.organization.url")
 
   def organizationName(): String = {
     maybeOrganizationName.getOrElse("")
@@ -45,5 +46,9 @@ class ViewHelpers @Inject()
 
   def organizationLogo(): String = {
     maybeOrganizationLogoUrl.getOrElse("")
+  }
+
+  def organizationUrl(): Option[String] = {
+    maybeOrganizationUrl
   }
 }
