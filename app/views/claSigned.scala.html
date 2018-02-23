@@ -30,8 +30,10 @@
 
 @this(main: main)
 
-@main("Salesforce CLA Signed") {
+@(maybeOrganizationName: Option[String])
 
-    <h2 class="slds-text-heading--large">Thanks for signing the Salesforce CLA!</h2>
+@main(maybeOrganizationName.getOrElse("") + " CLA Signed") {
+
+    <h2 class="slds-text-heading--large">Thanks for signing the @maybeOrganizationName CLA!</h2>
 
 }

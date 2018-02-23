@@ -30,7 +30,7 @@
 
 @this(main: main, webJarsUtil: org.webjars.play.WebJarsUtil)
 
-@(orgs: Map[String, String], integrationSlug: String, oAuthClientId: String)
+@(orgs: Map[String, String], integrationSlug: String, oAuthClientId: String, maybeOrganizationName: Option[String])
 
 @main("CLA Audit") {
 
@@ -62,9 +62,9 @@
     <div style="text-align: left; margin-left: 10px; margin-top: 10px;">
         To see a GitHub Org here:
         <ol class="slds-list--ordered">
-            <li><a href="https://github.com/integration/@integrationSlug">Install the Salesforce CLA Integration</a> into the org</li>
+            <li><a href="https://github.com/integration/@integrationSlug">Install the @maybeOrganizationName.getOrElse("") CLA Integration</a> into the org</li>
             <li>Make sure you are an admin on the org</li>
-            <li>Make sure the <a href="https://github.com/settings/connections/applications/@oAuthClientId">Salesforce CLA application</a> has access to the org</li>
+            <li>Make sure the <a href="https://github.com/settings/connections/applications/@oAuthClientId">@maybeOrganizationName.getOrElse("") CLA application</a> has access to the org</li>
         </ol>
     </div>
 
