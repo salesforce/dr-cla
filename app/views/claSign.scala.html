@@ -36,7 +36,7 @@
 
 @main("Sign the " + maybeOrganizationName + " CLA") {
 
-    <h2 class="slds-text-heading--large" style="margin-bottom: 20px;">Sign the @maybeOrganizationName Contributor License Agreement (CLA)</h2>
+    <h2 class="slds-text-heading--large" style="margin-bottom: 20px;">Sign the @maybeOrganizationName.getOrElse("") Contributor License Agreement (CLA)</h2>
 
     <ul class="slds-timeline slds-container--left">
         <li class="slds-timeline__item">

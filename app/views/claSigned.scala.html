@@ -32,7 +32,7 @@
 
 @(maybeOrganizationName: Option[String])
 
-@main(maybeOrganizationName + " CLA Signed") {
+@main(maybeOrganizationName.getOrElse("") + " CLA Signed") {
 
     <h2 class="slds-text-heading--large">Thanks for signing the @maybeOrganizationName CLA!</h2>
 
