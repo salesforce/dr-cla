@@ -34,13 +34,21 @@ import javax.inject.Inject
 
 import play.api.Configuration
 
+import scala.io.Source
+
 class ViewHelpers @Inject()
 (configuration: Configuration ) {
   val maybeOrganizationName = configuration.getOptional[String]("app.organization.name")
   val maybeOrganizationLogoUrl = configuration.getOptional[String]("app.organization.logo-url")
   val maybeOrganizationUrl = configuration.getOptional[String]("app.organization.url")
+  val claText = configuration.get[String]("app.organization.cla-url")
 
   def organizationName(): String = {
     maybeOrganizationName.getOrElse("")
+  }
+
+  def getClaText(): String = {
+    val text = Source.fromURL(claText)
+    text.mkString
   }
 }
