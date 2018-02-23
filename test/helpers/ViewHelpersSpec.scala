@@ -31,10 +31,44 @@
 package helpers
 
 import org.scalatestplus.play.PlaySpec
+import org.scalatest.Matchers._
 import org.scalatestplus.play.guice.GuiceOneAppPerTest
+import play.api.Mode
+import play.api.inject.guice.GuiceApplicationBuilder
 
 class ViewHelpersSpec extends PlaySpec with GuiceOneAppPerTest {
+  val testOrgName = "Test Org Name"
+  val testOrgUrl = "http://orgurl.org"
+  val testOrgLogoUrl = "image.jpg"
+
+  override implicit def fakeApplication() = new GuiceApplicationBuilder()
+    .configure(
+      Map(
+        "app.organization.name" -> testOrgName,
+        "app.organization.url" -> testOrgUrl,
+        "app.organization.logo-url"-> testOrgLogoUrl
+      )
+    )
+    .in(Mode.Test)
+    .build()
+
   lazy val viewHelper = app.injector.instanceOf[ViewHelpers]
 
-
+  "ViewHelper" must {
+    "give a valid organization name" in {
+      val orgName = viewHelper.organizationName()
+      orgName mustBe a [String]
+      orgName mustEqual(testOrgName)
+    }
+    "give a valid organization URL" in {
+      val orgUrl = viewHelper.maybeOrganizationUrl
+      orgUrl shouldBe defined
+      orgUrl shouldEqual Some(testOrgUrl)
+    }
+    "give a valid organization logo URL" in {
+      val orgLogoUrl = viewHelper.maybeOrganizationLogoUrl
+      orgLogoUrl shouldBe defined
+      orgLogoUrl shouldEqual Some(testOrgLogoUrl)
+    }
+  }
 }

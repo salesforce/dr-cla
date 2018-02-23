@@ -99,7 +99,7 @@
     </head>
     <body>
         <div class="slds-container--center slds-container--medium" style="text-align: center; padding: 20px;">
-            @for(orgLogoUrl <- viewHelper.maybeOrganizationLogoUrl {
+            @for(orgLogoUrl <- viewHelper.maybeOrganizationLogoUrl) {
                 <img src="@orgLogoUrl" style="height: 57px" />
             }
         </div>

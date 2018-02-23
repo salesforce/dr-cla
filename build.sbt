@@ -57,7 +57,3 @@ unmanagedSources.in(Compile, headerCreate) ++= sources.in(Compile, TwirlKeys.com
 // license report stuff
 
 licenseConfigurations := Set("runtime")
-
-fork in Test := true
-
-envVars in Test := Map("ORG_URL" -> "http://test.org", "ORG_LOGO" -> "logo.jpg", "ORG_NAME" -> "Test")
