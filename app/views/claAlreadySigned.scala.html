@@ -29,12 +29,13 @@
  *@
 
 @import java.time.format.DateTimeFormatter
+@import helpers.ViewHelpers
 
-@this(main: main)
+@this(main: main, viewHelpers: ViewHelpers)
 
-@(signedOn: java.time.LocalDateTime, maybeOrganizationName: Option[String])
+@(signedOn: java.time.LocalDateTime)
 
-@main(maybeOrganizationName.getOrElse("") + " CLA Signed") {
+@main(viewHelpers.organizationName() + " CLA Signed") {
 
     <h2 class="slds-text-heading--large">You already signed the CLA on @signedOn.format(DateTimeFormatter.ISO_LOCAL_DATE)</h2>
 }
