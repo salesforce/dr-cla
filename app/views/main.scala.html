@@ -28,7 +28,7 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *@
 
-@this(webJarsUtil: org.webjars.play.WebJarsUtil)
+@this(webJarsUtil: org.webjars.play.WebJarsUtil, viewHelper: helpers.ViewHelpers)
 
 @(title: String, isSmall: Boolean = false)(content: Html)
 
@@ -99,7 +99,9 @@
     </head>
     <body>
         <div class="slds-container--center slds-container--medium" style="text-align: center; padding: 20px;">
-            <img src="@routes.Assets.versioned("images/salesforce.svg")" style="height: 57px">
+            @for(orgLogoUrl <- viewHelper.maybeOrganizationLogoUrl) {
+                <img src="@orgLogoUrl" style="height: 57px" />
+            }
         </div>
         @webJarsUtil.locate("slds_spinner.gif").img(Map("id" -> "loading", "alt" -> "Loading...", "style" -> "height: 4rem; vertical-align: top; display: block; margin: auto"))
         @if(isSmall) {

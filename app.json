@@ -24,6 +24,9 @@
     },
     "ORG_URL": {
       "description": "The URL to redirect to for the root of this application"
+    },
+    "ORG_LOGO": {
+      "description": "A cross domain accessible link to your orgs logo"
     }
   },
   "addons": [

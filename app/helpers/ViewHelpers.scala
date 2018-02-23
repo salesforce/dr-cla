@@ -1,4 +1,4 @@
-@*
+/*
  * Copyright (c) 2017, salesforce.com, inc.
  * All rights reserved.
  *
@@ -26,12 +26,21 @@
  * ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *@
+ */
 
-@this(main: main, viewHelpers: helpers.ViewHelpers)
+package helpers
 
-@main(viewHelpers.organizationName() + " CLA Signed") {
+import javax.inject.Inject
 
-    <h2 class="slds-text-heading--large">Thanks for signing the CLA!</h2>
+import play.api.Configuration
 
+class ViewHelpers @Inject()
+(configuration: Configuration ) {
+  val maybeOrganizationName = configuration.getOptional[String]("app.organization.name")
+  val maybeOrganizationLogoUrl = configuration.getOptional[String]("app.organization.logo-url")
+  val maybeOrganizationUrl = configuration.getOptional[String]("app.organization.url")
+
+  def organizationName(): String = {
+    maybeOrganizationName.getOrElse("")
+  }
 }

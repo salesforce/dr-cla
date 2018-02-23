@@ -54,7 +54,6 @@ headerMappings += FileType("html") -> HeaderCommentStyle.TwirlStyleBlockComment
 
 unmanagedSources.in(Compile, headerCreate) ++= sources.in(Compile, TwirlKeys.compileTemplates).value
 
-
 // license report stuff
 
 licenseConfigurations := Set("runtime")

@@ -56,6 +56,7 @@ import scala.xml.{Comment, Node}
 class Application @Inject()
   (env: Environment, gitHub: GitHub, db: DB, crypto: Crypto, configuration: Configuration, webJarsUtil: WebJarsUtil)
   (claSignView: views.html.claSign, claSignedView: views.html.claSigned, claAlreadySignedView: views.html.claAlreadySigned, claStatusView: views.html.claStatus, auditView: views.html.audit, auditReposView: views.html.auditRepos, auditError: views.html.auditError)
+  (viewHelper: helpers.ViewHelpers)
   (implicit ec: ExecutionContext)
   extends InjectedController {
 
@@ -64,13 +65,9 @@ class Application @Inject()
 
   val gitHubOauthScopesForClaSigning = Seq("user:email")
   val gitHubOauthScopesForAudit = Seq("read:org")
-  val maybeOrganizationName = configuration.getOptional[String]("app.organization.name")
-  val maybeOrganizationUrl = configuration.getOptional[String]("app.organization.url")
-
-  def isEmpty(x: String) = x == null || x.isEmpty
 
   def index = Action {
-    maybeOrganizationUrl.fold(Redirect(routes.Application.signCla()))(Redirect(_))
+    viewHelper.maybeOrganizationUrl.fold(Redirect(routes.Application.signCla()))(Redirect(_))
   }
 
   def wellKnown(key: String) = Action {
@@ -107,10 +104,10 @@ class Application @Inject()
 
       claSignatureExistsFuture.map { _ =>
         val authUrl = gitHubAuthUrl(gitHubOauthScopesForClaSigning, routes.Application.signCla().absoluteURL())
-        Ok(claSignView(latestClaVersion, authUrl, maybeGitHubAuthInfo, latestClaVersion, claText(latestClaVersion), svgInline, maybeOrganizationName))
+        Ok(claSignView(latestClaVersion, authUrl, maybeGitHubAuthInfo, latestClaVersion, claText(latestClaVersion), svgInline))
       } recover {
         case AlreadyExistsException(claSignature) =>
-          BadRequest(claAlreadySignedView(claSignature.signedOn, maybeOrganizationName))
+          BadRequest(claAlreadySignedView(claSignature.signedOn))
       }
     }
   }
@@ -162,7 +159,7 @@ class Application @Inject()
       }
     } recover {
       case AlreadyExistsException(claSignature) =>
-        BadRequest(claAlreadySignedView(claSignature.signedOn, maybeOrganizationName))
+        BadRequest(claAlreadySignedView(claSignature.signedOn))
       case e: Throwable =>
         Logger.error("CLA could not be signed.", e)
         InternalServerError("Could not sign the CLA, please contact oss-cla@salesforce.com")
@@ -171,7 +168,7 @@ class Application @Inject()
   }
 
   def signedCla = Action {
-    Ok(claSignedView(maybeOrganizationName))
+    Ok(claSignedView())
   }
 
   case class NoPullRequest() extends Exception {
@@ -298,7 +295,7 @@ class Application @Inject()
 
         gitHub.integrationAndUserOrgs(userAccessToken).map { orgs =>
           val orgsWithEncAccessToken = orgs.mapValues(crypto.encryptAES)
-          Ok(auditView(orgsWithEncAccessToken, gitHub.integrationSlug, gitHub.clientId, maybeOrganizationName))
+          Ok(auditView(orgsWithEncAccessToken, gitHub.integrationSlug, gitHub.clientId))
         } recover {
           case e: IncorrectResponseStatus =>
             // user likely didn't have the right scope
