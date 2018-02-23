@@ -52,7 +52,7 @@ class ViewHelpersSpec extends PlaySpec with GuiceOneAppPerTest {
     .in(Mode.Test)
     .build()
 
-  lazy val viewHelper = app.injector.instanceOf[ViewHelpers]
+  def viewHelper = app.injector.instanceOf[ViewHelpers]
 
   "ViewHelper" must {
     "give a valid organization name" in {
@@ -63,12 +63,12 @@ class ViewHelpersSpec extends PlaySpec with GuiceOneAppPerTest {
     "give a valid organization URL" in {
       val orgUrl = viewHelper.maybeOrganizationUrl
       orgUrl shouldBe defined
-      orgUrl shouldEqual Some(testOrgUrl)
+      orgUrl should contain (testOrgUrl)
     }
     "give a valid organization logo URL" in {
       val orgLogoUrl = viewHelper.maybeOrganizationLogoUrl
       orgLogoUrl shouldBe defined
-      orgLogoUrl shouldEqual Some(testOrgLogoUrl)
+      orgLogoUrl should contain (testOrgLogoUrl)
     }
   }
 }
