@@ -1,0 +1,5 @@
+package helpers
+
+class ViewHelpersSpec {
+
+}
