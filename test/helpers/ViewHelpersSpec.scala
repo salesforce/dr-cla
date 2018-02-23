@@ -1,4 +1,4 @@
-@*
+/*
  * Copyright (c) 2017, salesforce.com, inc.
  * All rights reserved.
  *
@@ -26,12 +26,49 @@
  * ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
  * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- *@
+ */
 
-@this(main: main, viewHelpers: helpers.ViewHelpers)
+package helpers
 
-@main(viewHelpers.organizationName() + " CLA Signed") {
+import org.scalatestplus.play.PlaySpec
+import org.scalatest.Matchers._
+import org.scalatestplus.play.guice.GuiceOneAppPerTest
+import play.api.Mode
+import play.api.inject.guice.GuiceApplicationBuilder
 
-    <h2 class="slds-text-heading--large">Thanks for signing the CLA!</h2>
+class ViewHelpersSpec extends PlaySpec with GuiceOneAppPerTest {
+  val testOrgName = "Test Org Name"
+  val testOrgUrl = "http://orgurl.org"
+  val testOrgLogoUrl = "image.jpg"
 
+  override implicit def fakeApplication() = new GuiceApplicationBuilder()
+    .configure(
+      Map(
+        "app.organization.name" -> testOrgName,
+        "app.organization.url" -> testOrgUrl,
+        "app.organization.logo-url"-> testOrgLogoUrl
+      )
+    )
+    .in(Mode.Test)
+    .build()
+
+  def viewHelper = app.injector.instanceOf[ViewHelpers]
+
+  "ViewHelper" must {
+    "give a valid organization name" in {
+      val orgName = viewHelper.organizationName()
+      orgName mustBe a [String]
+      orgName mustEqual(testOrgName)
+    }
+    "give a valid organization URL" in {
+      val orgUrl = viewHelper.maybeOrganizationUrl
+      orgUrl shouldBe defined
+      orgUrl should contain (testOrgUrl)
+    }
+    "give a valid organization logo URL" in {
+      val orgLogoUrl = viewHelper.maybeOrganizationLogoUrl
+      orgLogoUrl shouldBe defined
+      orgLogoUrl should contain (testOrgLogoUrl)
+    }
+  }
 }

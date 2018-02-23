@@ -28,15 +28,17 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *@
 
-@this(webJarsUtil: org.webjars.play.WebJarsUtil, main: main)
+@import helpers.ViewHelpers
 
-@(version: String, authUrl: String, maybeGitHubAuthInfo: Option[GitHubAuthInfo], claVersion: String, claText: String, svgInline: (String, String) => Html, maybeOrganizationName: Option[String])
+@this(webJarsUtil: org.webjars.play.WebJarsUtil, main: main, viewHelpers: ViewHelpers)
+
+@(version: String, authUrl: String, maybeGitHubAuthInfo: Option[GitHubAuthInfo], claVersion: String, claText: String, svgInline: (String, String) => Html)
 
 @import scala.util.Success
 
-@main("Sign the " + maybeOrganizationName + " CLA") {
+@main("Sign the " + viewHelpers.organizationName() + " CLA") {
 
-    <h2 class="slds-text-heading--large" style="margin-bottom: 20px;">Sign the @maybeOrganizationName.getOrElse("") Contributor License Agreement (CLA)</h2>
+    <h2 class="slds-text-heading--large" style="margin-bottom: 20px;">Sign the @viewHelpers.organizationName() Contributor License Agreement (CLA)</h2>
 
     <ul class="slds-timeline slds-container--left">
         <li class="slds-timeline__item">
