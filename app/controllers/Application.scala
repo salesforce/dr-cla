@@ -67,7 +67,7 @@ class Application @Inject()
   val gitHubOauthScopesForAudit = Seq("read:org")
 
   def index = Action {
-    viewHelper.organizationUrl().fold(Redirect(routes.Application.signCla()))(Redirect(_))
+    viewHelper.maybeOrganizationUrl.fold(Redirect(routes.Application.signCla()))(Redirect(_))
   }
 
   def wellKnown(key: String) = Action {
