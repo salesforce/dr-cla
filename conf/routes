@@ -2,28 +2,30 @@
 # This file defines all application routes (Higher priority routes first)
 # ~~~~
 
-GET         /                                controllers.Application.index
+GET         /                                       controllers.Application.index
 
-GET         /sign-cla                        controllers.Application.signCla
-POST        /sign-cla                        controllers.Application.submitCla
+GET         /sign-cla                               controllers.Application.signCla
+POST        /sign-cla                               controllers.Application.submitCla
 
-GET         /signed-cla                      controllers.Application.signedCla
+GET         /signed-cla                             controllers.Application.signedCla
 
-POST        /webhook-integration             controllers.Application.webhookIntegration
+POST        /webhook-integration                    controllers.Application.webhookIntegration
 
-GET         /audit                           controllers.Application.audit
-GET         /audit/repos                     controllers.Application.auditRepos(org: String, encAccessToken: String)
-GET         /audit/contributors              controllers.Application.auditContributors(org: String, ownerRepo: String, encAccessToken: String)
+GET         /status/:org/:repo/pull/:prNum          controllers.Application.status(org: String, repo: String, prNum: Int)
 
-GET         /.well-known/acme-challenge/:key controllers.Application.wellKnown(key)
+GET         /audit                                  controllers.Application.audit
+GET         /audit/repos                            controllers.Application.auditRepos(org: String, encAccessToken: String)
+GET         /audit/contributors                     controllers.Application.auditContributors(org: String, ownerRepo: String, encAccessToken: String)
+
+GET         /.well-known/acme-challenge/:key        controllers.Application.wellKnown(key)
 
 # OAuth
-GET         /_github_oauth_callback          controllers.Application.gitHubOauthCallback(code: String, state: String)
+GET         /_github_oauth_callback                 controllers.Application.gitHubOauthCallback(code: String, state: String)
 
 
 # Map static resources from the /public folder to the /assets URL path
-GET        /assets/*file                     controllers.Assets.versioned(path="/public", file: Asset)
-GET        /favicon.ico                      controllers.Assets.at(path="/public/images", file="favicon.ico")
+GET         /assets/*file                           controllers.Assets.versioned(path="/public", file: Asset)
+GET         /favicon.ico                            controllers.Assets.at(path="/public/images", file="favicon.ico")
 
 # WebJars
-->         /webjars                          webjars.Routes
+->          /webjars                                webjars.Routes

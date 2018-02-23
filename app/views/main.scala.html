@@ -30,7 +30,7 @@
 
 @this(webJarsUtil: org.webjars.play.WebJarsUtil)
 
-@(title: String)(content: Html)
+@(title: String, isSmall: Boolean = false)(content: Html)
 
 @import scala.util.Success
 
@@ -102,9 +102,13 @@
             <img src="@routes.Assets.versioned("images/salesforce.svg")" style="height: 57px">
         </div>
         @webJarsUtil.locate("slds_spinner.gif").img(Map("id" -> "loading", "alt" -> "Loading...", "style" -> "height: 4rem; vertical-align: top; display: block; margin: auto"))
-        <div id="content" class="slds-container--center slds-container--medium" style="text-align: center; display: none;">
-            @content
-        </div>
+        @if(isSmall) {
+            <div id="content" class="slds-container--center slds-container--small" style="display: none;">
+        } else {
+            <div id="content" class="slds-container--center slds-container--medium" style="text-align: center; display: none;">
+        }
+                @content
+            </div>
         <script>
             window.onload = function() {
                 document.getElementById("loading").style.display = "none";

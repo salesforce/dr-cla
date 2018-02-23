@@ -18,6 +18,12 @@
     },
     "GITHUB_INTEGRATION_PRIVATE_KEY": {
       "description": "GitHub Integration Private Key"
+    },
+    "ORG_NAME": {
+      "description": "The name of your organization"
+    },
+    "ORG_URL": {
+      "description": "The URL to redirect to for the root of this application"
     }
   },
   "addons": [

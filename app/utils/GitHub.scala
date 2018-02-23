@@ -55,6 +55,8 @@ import scala.util.Try
 
 class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi: MessagesApi) (implicit ec: ExecutionContext) {
 
+  import GitHub._
+
   implicit val defaultLang: Lang = Lang(Locale.getDefault)
 
   val clientId = configuration.get[String]("github.oauth.client-id")
@@ -254,10 +256,14 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     ws(path, accessToken).get().flatMap(okT[JsArray])
   }
 
-  def collaborators(ownerRepo: String, accessToken: String): Future[JsArray] = {
+  def collaborators(ownerRepo: String, accessToken: String): Future[Set[Contributor]] = {
     val path = s"repos/$ownerRepo/collaborators"
 
-    fetchPages(path, accessToken)
+    fetchPages(path, accessToken).map { collaborators =>
+      collaborators.value.map { json =>
+        GitHubUser((json \ "login").as[String])
+      }.toSet
+    }
   }
 
   def commentOnIssue(ownerRepo: String, issueNumber: Int, body: String, accessToken: String): Future[JsValue] = {
@@ -320,11 +326,26 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     ws(path, accessToken).delete().flatMap(ok)
   }
 
-  def toggleLabel(ownerRepo: String, newLabel: String, oldLabel: String, issueNumber: Int, accessToken: String): Future[JsValue] = {
-    val applyLabelFuture = applyLabel(ownerRepo, newLabel, issueNumber, accessToken)
+  // todo: do not re-apply an existing label
+  def toggleLabel(ownerRepo: String, newLabel: String, oldLabel: String, issueNumber: Int, accessToken: String): Future[Option[JsValue]] = {
+    getIssueLabels(ownerRepo, issueNumber, accessToken).flatMap { json =>
+      val issueLabels = json.value.map(_.\("name").as[String])
 
-    removeLabel(ownerRepo, oldLabel, issueNumber, accessToken).flatMap(_ => applyLabelFuture).recoverWith {
-      case _ => applyLabelFuture
+      val removeLabelFuture = if (issueLabels.contains(oldLabel)) {
+        removeLabel(ownerRepo, oldLabel, issueNumber, accessToken)
+      }
+      else {
+        Future.successful(())
+      }
+
+      removeLabelFuture.flatMap { _ =>
+        if (!issueLabels.contains(newLabel)) {
+          applyLabel(ownerRepo, newLabel, issueNumber, accessToken).map(Some(_))
+        }
+        else {
+          Future.successful(None)
+        }
+      }
     }
   }
 
@@ -515,7 +536,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     }
   }
 
-// todo: optimize this
+  // todo: optimize this
   private def pullRequestsNeedingValidationForAccessToken(signerGitHubId: String, repos: Seq[JsObject], accessToken: String): Future[Map[JsObject, String]] = {
     val repoNames = repos.map(_.\("full_name").as[String]).toSet
 
@@ -552,10 +573,10 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     } yield pullRequests.flatten.toMap
   }
 
-  def pullRequestUserCommitters(ownerRepo: String, prNumber: Int, sha: String, accessToken: String): Future[Set[String]] = {
+  def pullRequestUserCommitters(ownerRepo: String, prNumber: Int, sha: String, accessToken: String): Future[Set[Contributor]] = {
     val prCommitsFuture = pullRequestCommits(ownerRepo, prNumber, accessToken)
 
-    prCommitsFuture.flatMap { commits =>
+    prCommitsFuture.map { commits =>
       val onlyUserCommits = commits.value.filterNot { commit =>
         val maybeAuthorType = (commit \ "author" \ "type").asOpt[String]
         maybeAuthorType.contains("Bot")
@@ -564,13 +585,15 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
       val commitsWithMaybeLogins = onlyUserCommits.map { commit =>
         val maybeAuthorLogin = (commit \ "author" \ "login").asOpt[String]
 
-        maybeAuthorLogin.fold {
+        maybeAuthorLogin.fold[Contributor] {
           val author = (commit \ "commit" \ "author").as[JsObject]
-          Future.failed[String](GitHub.AuthorLoginNotFound(sha, author))
-        } (Future.successful)
+          val maybeName = (author \ "name").asOpt[String]
+          val maybeEmail = (author \ "email").asOpt[String]
+          UnknownCommitter(maybeName, maybeEmail)
+        } (GitHubUser)
       }
 
-      Future.sequence(commitsWithMaybeLogins).map(_.toSet)
+      commitsWithMaybeLogins.toSet
     }
   }
 
@@ -580,81 +603,94 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     ws(path, accessToken).get().flatMap(okT[JsArray])
   }
 
-  def externalContributors(contributors: Set[String], internalContributors: Set[String]): Set[String] = {
+  def externalContributors(contributors: Set[Contributor], internalContributors: Set[Contributor]): Set[Contributor] = {
     contributors.diff(internalContributors)
   }
 
-  def logins(users: JsArray): Set[String] = {
-    users.value.map(_.\("login").as[String]).toSet
+  /*
+  def logins(users: JsArray): Set[GitHubUser] = {
+    users.value.map(_.\("login").as[String]).map(GitHubUser).toSet
   }
+  */
 
-  def contributorLoginsAndContributions(contributors: JsArray): Map[String, Int] = {
+  def contributorLoginsAndContributions(contributors: JsArray): Map[Contributor, Int] = {
     val loginAndCount = contributors.value.map { contributor =>
       val login = contributor.\("login").as[String]
       val count = contributor.\("contributions").as[Int]
-      (login, count)
+      GitHubUser(login) -> count
     }
 
     loginAndCount.toMap
   }
 
-  def externalContributorsForPullRequest(ownerRepo: String, prNumber: Int, sha: String, accessToken: String): Future[Set[String]] = {
+  def externalContributorsForPullRequest(ownerRepo: String, prNumber: Int, sha: String, accessToken: String): Future[Set[Contributor]] = {
     val pullRequestCommittersFuture = pullRequestUserCommitters(ownerRepo, prNumber, sha, accessToken)
     val collaboratorsFuture = collaborators(ownerRepo, accessToken)
 
     for {
       pullRequestCommitters <- pullRequestCommittersFuture
       collaborators <- collaboratorsFuture
-    } yield externalContributors(pullRequestCommitters, logins(collaborators))
+    } yield externalContributors(pullRequestCommitters, collaborators)
   }
 
-  def committersWithoutClas(externalContributors: Set[String])(clasForCommitters: (Set[String]) => Future[Set[ClaSignature]]): Future[Set[String]] = {
+  def committersWithoutClas(externalContributors: Set[Contributor])(clasForCommitters: (Set[Contributor]) => Future[Set[ClaSignature]]): Future[Set[Contributor]] = {
     for {
       clasForCommitters <- clasForCommitters(externalContributors)
     } yield {
       // todo: maybe check latest CLA version
-      externalContributors.diff(clasForCommitters.map(_.contactGitHubId))
+      // todo: ability to exclude users with a given email address domain
+      externalContributors.diff(clasForCommitters.map(claSignature => GitHubUser(claSignature.contactGitHubId)))
     }
   }
 
-  def missingClaComment(ownerRepo: String, prNumber: Int, sha: String, claUrl: String, committersWithoutClas: Set[String], accessToken: String): Future[Either[JsValue, Unit]] = {
-    if (committersWithoutClas.nonEmpty) {
+  def missingClaComment(ownerRepo: String, prNumber: Int, sha: String, claUrl: String, gitHubUsers: Set[GitHubUser], accessToken: String): Future[Option[JsValue]] = {
+    if (gitHubUsers.nonEmpty) {
       issueComments(ownerRepo, prNumber, accessToken).flatMap { comments =>
-        val message = messagesApi("cla.missing", committersWithoutClas.map(" @" + _).mkString, claUrl)
+        val message = messagesApi("cla.missing", gitHubUsers.map(_.username).mkString("@", " @", ""), claUrl)
 
         val alreadyCommented = comments.value.exists(_.\("body").as[String] == message)
         if (!alreadyCommented) {
-          commentOnIssue(ownerRepo, prNumber, message, accessToken).map(Left(_))
+          commentOnIssue(ownerRepo, prNumber, message, accessToken).map(Some(_))
         }
         else {
-          Future.successful(Right(Unit))
+          Future.successful(None)
         }
       }
     }
     else {
-      Future.successful(Right(Unit))
+      Future.successful(None)
     }
   }
 
-  def authorLoginNotFoundComment(ownerRepo: String, prNumber: Int, claUrl: String, authorLoginNotFound: GitHub.AuthorLoginNotFound, accessToken: String): Future[Either[JsValue, Unit]] = {
-    issueComments(ownerRepo, prNumber, accessToken).flatMap { comments =>
-      val message = authorLoginNotFound.maybeName.fold {
-        messagesApi("cla.author-not-found-without-name", claUrl)
-      } { name =>
-        messagesApi("cla.author-not-found-with-name", name, claUrl)
-      }
+  def authorLoginNotFoundComment(ownerRepo: String, prNumber: Int, claUrl: String, unknownCommitters: Set[UnknownCommitter], accessToken: String): Future[Option[JsValue]] = {
+    if (unknownCommitters.nonEmpty) {
+      val committers = unknownCommitters.flatMap(_.toStringOpt)
 
-      val alreadyCommented = comments.value.exists(_.\("body").as[String] == message)
-      if (!alreadyCommented) {
-        commentOnIssue(ownerRepo, prNumber, message, accessToken).map(Left(_))
+      issueComments(ownerRepo, prNumber, accessToken).flatMap { comments =>
+
+        val message = if (committers.isEmpty) {
+          messagesApi("cla.author-not-found-without-name", claUrl)
+        }
+        else {
+          val names = committers.mkString(" ")
+          messagesApi("cla.author-not-found-with-name", names, claUrl)
+        }
+
+        val alreadyCommented = comments.value.exists(_.\("body").as[String] == message)
+        if (!alreadyCommented) {
+          commentOnIssue(ownerRepo, prNumber, message, accessToken).map(Some(_))
+        }
+        else {
+          Future.successful(None)
+        }
       }
-      else {
-        Future.successful(Right(Unit))
-      }
+    }
+    else {
+      Future.successful(None)
     }
   }
 
-  def updatePullRequestLabel(ownerRepo: String, prNumber: Int, hasExternalContributors: Boolean, hasMissingClas: Boolean, accessToken: String): Future[JsValue] = {
+  def updatePullRequestLabel(ownerRepo: String, prNumber: Int, hasExternalContributors: Boolean, hasMissingClas: Boolean, accessToken: String): Future[Option[JsValue]] = {
     if (hasExternalContributors) {
       if (hasMissingClas) {
         toggleLabel(ownerRepo, "cla:missing", "cla:signed", prNumber, accessToken)
@@ -664,33 +700,59 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
       }
     }
     else {
-      Future.successful(Json.obj())
+      Future.successful(None)
     }
   }
 
-  def validatePullRequests(pullRequests: Map[JsObject, String], claUrl: String)(clasForCommitters: (Set[String]) => Future[Set[ClaSignature]]): Future[Iterable[JsObject]] = {
+  def validatePullRequest(pullRequest: JsObject, token: String, claUrl: String, statusUrlF: (String, String, Int) => String)(clasForCommitters: (Set[Contributor]) => Future[Set[ClaSignature]]): Future[(Set[Contributor], Set[Contributor], JsObject)] = {
+    val owner = (pullRequest \ "pull_request" \ "base" \ "repo" \ "owner" \ "login").as[String]
+    val repo = (pullRequest \ "pull_request" \ "base" \ "repo" \ "name").as[String]
+    val ownerRepo = (pullRequest \ "pull_request" \ "base" \ "repo" \ "full_name").as[String]
+    val prNumber = (pullRequest \ "pull_request" \ "number").as[Int]
+    val sha = (pullRequest \ "pull_request" \ "head" \ "sha").as[String]
+
+    val statusUrl = statusUrlF(owner, repo, prNumber)
+
+    def addComment(gitHubUsers: Set[GitHubUser], unknownCommitters: Set[UnknownCommitter]): Future[(Option[JsValue], Option[JsValue])] = {
+      val gitHubUsersCommentFuture = missingClaComment(ownerRepo, prNumber, sha, claUrl, gitHubUsers, token)
+      val unknownCommittersCommentFuture = authorLoginNotFoundComment(ownerRepo, prNumber, statusUrl, unknownCommitters, token)
+
+      for {
+        gitHubUsersComment <- gitHubUsersCommentFuture
+        unknownCommittersComment <- unknownCommittersCommentFuture
+      } yield gitHubUsersComment -> unknownCommittersComment
+    }
+
+    def updateStatus(gitHubUsers: Set[GitHubUser], unknownCommitters: Set[UnknownCommitter]): Future[JsObject] = {
+
+      val (state, description) = (gitHubUsers.isEmpty, unknownCommitters.isEmpty) match {
+        case (true, true) =>
+          ("success", "All contributors have signed the CLA")
+        case (false, true) =>
+          ("failure", "One or more contributors need to sign the CLA")
+        case _ =>
+          ("error", "Commit authors must be associated with GitHub users")
+      }
+
+      createStatus(ownerRepo, sha, state, statusUrl, description, "salesforce-cla", token)
+    }
+
+    for {
+      _ <- createStatus(ownerRepo, sha, "pending", statusUrl, "The CLA verifier is running", "salesforce-cla", token)
+      externalContributors <- externalContributorsForPullRequest(ownerRepo, prNumber, sha, token)
+      committersWithoutClas <- committersWithoutClas(externalContributors)(clasForCommitters)
+      gitHubUsers = committersWithoutClas.collect { case gitHubUser: GitHubUser => gitHubUser }
+      unknownCommitters = committersWithoutClas.collect { case unknownCommitter: UnknownCommitter => unknownCommitter }
+      _ <- updatePullRequestLabel(ownerRepo, prNumber, externalContributors.nonEmpty, committersWithoutClas.nonEmpty, token)
+      _ <- addComment(gitHubUsers, unknownCommitters)
+      status <- updateStatus(gitHubUsers, unknownCommitters)
+    } yield (externalContributors, committersWithoutClas, status)
+  }
+
+  def validatePullRequests(pullRequests: Map[JsObject, String], claUrl: String, statusUrlF: (String, String, Int) => String)(clasForCommitters: (Set[Contributor]) => Future[Set[ClaSignature]]): Future[Iterable[(Set[Contributor], Set[Contributor], JsObject)]] = {
     Future.sequence {
       pullRequests.map { case (pullRequest, token) =>
-        val ownerRepo = (pullRequest \ "pull_request" \ "base" \ "repo" \ "full_name").as[String]
-        val prNumber = (pullRequest \ "pull_request" \ "number").as[Int]
-        val sha = (pullRequest \ "pull_request" \ "head" \ "sha").as[String]
-
-        val pullRequestStatusFuture = for {
-          _ <- createStatus(ownerRepo, sha, "pending", claUrl, "The CLA verifier is running", "salesforce-cla", token)
-          externalContributors <- externalContributorsForPullRequest(ownerRepo, prNumber, sha, token)
-          committersWithoutClas <- committersWithoutClas(externalContributors)(clasForCommitters)
-          _ <- missingClaComment(ownerRepo, prNumber, sha, claUrl, committersWithoutClas, token)
-          _ <- updatePullRequestLabel(ownerRepo, prNumber, externalContributors.nonEmpty, committersWithoutClas.nonEmpty, token)
-          (state, description) = if (committersWithoutClas.isEmpty) ("success", "All contributors have signed the CLA") else ("failure", "One or more contributors need to sign the CLA")
-          pullRequestStatus <- createStatus(ownerRepo, sha, state, claUrl, description, "salesforce-cla", token)
-        } yield pullRequestStatus
-
-        pullRequestStatusFuture.recoverWith {
-          case e: GitHub.AuthorLoginNotFound =>
-            authorLoginNotFoundComment(ownerRepo, prNumber, claUrl, e, token).flatMap { _ =>
-              createStatus(ownerRepo, sha, "error", claUrl, e.getMessage, "salesforce-cla", token)
-            }
-        }
+        validatePullRequest(pullRequest, token, claUrl, statusUrlF)(clasForCommitters)
       }
     }
   }
@@ -776,17 +838,27 @@ object GitHub {
     implicit val jsonWrites: Writes[Org] = Json.writes[Org]
   }
 
-  case class AuthorLoginNotFound(sha: String, author: JsObject) extends Exception {
-    val maybeName: Option[String] = (author \ "name").asOpt[String]
-    override def getMessage: String = "Commit authors must be associated with GitHub users"
-  }
-
   case class IncorrectResponseStatus(expectedStatusCode: Int, actualStatusCode: Int, message: String) extends Exception {
     override def getMessage: String = s"Expected status code $expectedStatusCode but got $actualStatusCode - $message"
   }
 
   case class InvalidResponseBody(body: String) extends Exception {
     override def getMessage: String = "Response body was not in the expected form"
+  }
+
+  sealed trait Contributor
+  case class GitHubUser(username: String) extends Contributor
+  case class UnknownCommitter(maybeName: Option[String], maybeEmail: Option[String]) extends Contributor {
+    def toStringOpt: Option[String] = (maybeName, maybeEmail) match {
+      case (Some(name), Some(email)) =>
+        Some(s"$name <$email>")
+      case (Some(name), None) =>
+        Some(name)
+      case (None, Some(email)) =>
+        Some(email)
+      case (None, None) =>
+        None
+    }
   }
 
 }

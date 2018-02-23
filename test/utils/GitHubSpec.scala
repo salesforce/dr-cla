@@ -68,6 +68,8 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
 
   lazy val gitHub = new GitHub(app.configuration, wsClient, messagesApi)(ExecutionContext.global)
 
+  val statusUrlF = (_: String, _: String, _: Int) => "http://asdf.com"
+
   val testToken1 = sys.env("GITHUB_TEST_TOKEN1")
   val testToken2 = sys.env("GITHUB_TEST_TOKEN2")
   val testOrg = sys.env("GITHUB_TEST_ORG")
@@ -348,7 +350,7 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
     "verify the test structure" in {
       withClue(s"$testLogin2 must not be a collaborator on $testRepo1: ") {
         val testRepo1Collaborators = await(gitHub.collaborators(testRepo1, testToken1))
-        testRepo1Collaborators.value.exists(_.\("login").as[String] == testLogin2) must be (false)
+        testRepo1Collaborators must not contain GitHub.GitHubUser(testLogin2)
       }
 
       withClue(s"$testLogin2 must be a private member of $testOrg: ") {
@@ -421,15 +423,15 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
   "GitHub.collaborators" must {
     "get the collaborators on a repo" in {
       val collaborators = await(gitHub.collaborators(testExternalPullRequestOwnerRepo, testToken1))
-      collaborators.value.find(_.\("login").as[String] == testLogin1) must be ('defined)
+      collaborators must contain (GitHub.GitHubUser(testLogin1))
     }
     "work with the Integration" in {
       val collaborators = await(gitHub.collaborators(testRepo1, testIntegrationToken))
-      collaborators.value.find(_.\("login").as[String] == testLogin1) must be ('defined)
+      collaborators must contain (GitHub.GitHubUser(testLogin1))
     }
     "see hidden collaborators via the Integration" in {
       val collaborators = await(gitHub.collaborators(testOrgRepo, testIntegrationTokenOrg))
-      collaborators.value.exists(_.\("login").as[String] == testLogin2) must be (true)
+      collaborators must contain (GitHub.GitHubUser(testLogin2))
     }
   }
 
@@ -647,7 +649,7 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
   "GitHub.pullRequestUserCommitters" must {
     "work" in {
       val pullRequestUserCommitters = await(gitHub.pullRequestUserCommitters(testInternalPullRequestOwnerRepo, testInternalPullRequestNum, testInternalPullRequestSha, testIntegrationToken))
-      pullRequestUserCommitters must equal (Set(testLogin1))
+      pullRequestUserCommitters must equal (Set(GitHub.GitHubUser(testLogin1)))
     }
     "fail with non-github user contributors" in {
       // todo: but hard to simulate
@@ -667,14 +669,14 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
     "work with integrations for pull requests with only internal contributors and/or bots" in {
       val pullRequestsViaIntegration = Map(testInternalPullRequest -> testIntegrationToken)
 
-      val validationResultsFuture = gitHub.validatePullRequests(pullRequestsViaIntegration, "http://asdf.com/") { _ =>
+      val validationResultsFuture = gitHub.validatePullRequests(pullRequestsViaIntegration, "http://asdf.com/", statusUrlF) { _ =>
         Future.successful(Set.empty[ClaSignature])
       }
 
       val validationResults = await(validationResultsFuture)
       validationResults.size must equal (1)
-      (validationResults.head \ "creator" \ "login").as[String].endsWith("[bot]") must be (true)
-      (validationResults.head \ "state").as[String] must equal ("success")
+      (validationResults.head._3 \ "creator" \ "login").as[String].endsWith("[bot]") must be (true)
+      (validationResults.head._3 \ "state").as[String] must equal ("success")
 
       val labels = await(gitHub.getIssueLabels(testInternalPullRequestOwnerRepo, testInternalPullRequestNum, testIntegrationToken))
       labels.value must be ('empty)
@@ -685,13 +687,13 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
     "not comment on a pull request when the external contributors have signed the CLA" in {
       val pullRequestsViaIntegration = Map(testExternalPullRequest -> testIntegrationToken)
 
-      val validationResultsFuture = gitHub.validatePullRequests(pullRequestsViaIntegration, "http://asdf.com/") { _ =>
+      val validationResultsFuture = gitHub.validatePullRequests(pullRequestsViaIntegration, "http://asdf.com/", statusUrlF) { _ =>
         Future.successful(Set(ClaSignature(1, testLogin2, LocalDateTime.now(), "1.0")))
       }
 
       val validationResults = await(validationResultsFuture)
       validationResults.size must equal (1)
-      (validationResults.head \ "state").as[String] must equal ("success")
+      (validationResults.head._3 \ "state").as[String] must equal ("success")
 
       val labels = await(gitHub.getIssueLabels(testExternalPullRequestOwnerRepo, testExternalPullRequestNum, testIntegrationToken))
       labels.value.exists(_.\("name").as[String] == "cla:signed") must be (true)
@@ -702,14 +704,14 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
     "work with integrations for pull requests with external contributors" in {
       val pullRequestsViaIntegration = Map(testExternalPullRequest -> testIntegrationToken)
 
-      val validationResultsFuture = gitHub.validatePullRequests(pullRequestsViaIntegration, "http://asdf.com/") { _ =>
+      val validationResultsFuture = gitHub.validatePullRequests(pullRequestsViaIntegration, "http://asdf.com/", statusUrlF) { _ =>
         Future.successful(Set.empty[ClaSignature])
       }
 
       val validationResults = await(validationResultsFuture)
       validationResults.size must equal (1)
-      (validationResults.head \ "creator" \ "login").as[String].endsWith("[bot]") must be (true)
-      (validationResults.head \ "state").as[String] must equal ("failure")
+      (validationResults.head._3 \ "creator" \ "login").as[String].endsWith("[bot]") must be (true)
+      (validationResults.head._3 \ "state").as[String] must equal ("failure")
 
       val labels = await(gitHub.getIssueLabels(testExternalPullRequestOwnerRepo, testExternalPullRequestNum, testIntegrationToken))
       labels.value.exists(_.\("name").as[String] == "cla:missing") must be (true)
@@ -720,8 +722,8 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
     "not comment twice on the same pull request" in {
       val pullRequestsViaIntegration = Map(testExternalPullRequest -> testIntegrationToken)
 
-      await(gitHub.validatePullRequests(pullRequestsViaIntegration, "http://asdf.com/")(_ => Future.successful(Set.empty[ClaSignature])))
-      await(gitHub.validatePullRequests(pullRequestsViaIntegration, "http://asdf.com/")(_ => Future.successful(Set.empty[ClaSignature])))
+      await(gitHub.validatePullRequests(pullRequestsViaIntegration, "http://asdf.com/", statusUrlF)(_ => Future.successful(Set.empty[ClaSignature])))
+      await(gitHub.validatePullRequests(pullRequestsViaIntegration, "http://asdf.com/", statusUrlF)(_ => Future.successful(Set.empty[ClaSignature])))
 
       val issueComments = await(gitHub.issueComments(testExternalPullRequestOwnerRepo, testExternalPullRequestNum, testToken1))
       issueComments.value.count(_.\("user").\("login").as[String].endsWith("[bot]")) must equal (1)
@@ -736,7 +738,7 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
   }
 
   "repoContributors" should {
-    "worl" in {
+    "work" in {
       val repoContributros = await(gitHub.repoContributors(testOrgRepo, testIntegrationToken))
       repoContributros.value.exists(_.\("login").as[String] == testLogin1) must be (true)
     }

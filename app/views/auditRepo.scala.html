@@ -30,8 +30,9 @@
 
 @import java.time.LocalDateTime
 @import java.time.format.DateTimeFormatter
+@import _root_.utils.GitHub
 
-@(externalContributors: Map[String, (Option[ClaSignature], Int)], internalContributors: Map[String, Int])
+@(externalContributors: Map[GitHub.Contributor, (Option[ClaSignature], Int)], internalContributors: Map[GitHub.Contributor, Int])
 
 @dateFormat(dateTime: LocalDateTime) = @{
     dateTime.format(DateTimeFormatter.ofPattern("MMM dd, yyyy"))
@@ -40,9 +41,10 @@
 @if(internalContributors.nonEmpty) {
     Internal Contributors:
     <ul class="slds-list--vertical slds-has-block-links" style="margin-left: 15px;">
-        @internalContributors.map { case (gitHubId, commits) =>
-            <li class="slds-list__item"><a href="https://github.com/@gitHubId" style="display: inline;">@gitHubId</a>
-            (@commits commits)</li>
+        @for((contributor, commits) <- internalContributors) {
+            <li class="slds-list__item">
+                @partials.contributorIdentity(contributor)
+            </li>
         }
     </ul>
 }
@@ -50,9 +52,9 @@
 @if(externalContributors.nonEmpty) {
     External Contributors:
     <ul class="slds-list--vertical slds-has-block-links" style="margin-left: 15px;">
-        @externalContributors.map { case (gitHubId, (maybeClaSignature, commits)) =>
+        @for((contributor, (maybeClaSignature, commits)) <- externalContributors) {
             <li class="slds-list__item" style="margin-top: 4px; margin-bottom: 4px;">
-                <a href="https://github.com/@gitHubId" style="display: inline;">@gitHubId</a>
+                @partials.contributorIdentity(contributor)
 
                 (@commits commits)
 

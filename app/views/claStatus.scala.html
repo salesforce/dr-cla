@@ -28,12 +28,28 @@
  * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *@
 
-@this(main: main)
+@import _root_.utils.GitHub
 
-@(maybeOrganizationName: Option[String])
+@this(webJarsUtil: org.webjars.play.WebJarsUtil, main: main)
 
-@main(maybeOrganizationName.getOrElse("") + " CLA Signed") {
+@(org: String, repo: String, prNum: Int, missingCla: Set[GitHub.Contributor], claUrl: String)
 
-    <h2 class="slds-text-heading--large">Thanks for signing the @maybeOrganizationName CLA!</h2>
+@main("CLA Status", true) {
 
+    <h2 class="slds-text-heading--large" style="margin-bottom: 20px;">CLA Status for <a href="https://github.com/@org/@repo/pull/@prNum">@org/@repo#@prNum</a></h2>
+
+    @if(missingCla.nonEmpty) {
+        One or more contributors to that Pull Request need to <a href="@claUrl">sign the CLA</a>:
+        @* todo: info for unknownCommitters *@
+
+        <ul class="slds-list_dotted" style="margin-left: 25px;">
+            @for(contributor <- missingCla) {
+                <li class="slds-list__item">
+                    @partials.contributorIdentity(contributor)
+                </li>
+            }
+        </ul>
+    } else {
+        All external contributors have signed the CLA
+    }
 }

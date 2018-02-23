@@ -92,12 +92,12 @@ class DBSpec extends PlaySpec with GuiceOneAppPerSuite {
       claSignature.id must not equal -1
     }
     "be queryable with one github id" in {
-      val claSignatures = await(db.findClaSignaturesByGitHubIds(Set("foobar")))
+      val claSignatures = await(db.findClaSignaturesByGitHubIds(Set(GitHub.GitHubUser("foobar"))))
       claSignatures.size mustEqual 1
       claSignatures.head.contactGitHubId mustEqual "foobar"
     }
     "be queryable with a set of github ids" in {
-      val claSignatures = await(db.findClaSignaturesByGitHubIds(Set("foobar", "jondoe")))
+      val claSignatures = await(db.findClaSignaturesByGitHubIds(Set(GitHub.GitHubUser("foobar"), GitHub.GitHubUser("jondoe"))))
       claSignatures.size mustEqual 1
       claSignatures.head.contactGitHubId mustEqual "foobar"
     }
