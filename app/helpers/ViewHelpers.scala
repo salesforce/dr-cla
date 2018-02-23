@@ -43,8 +43,4 @@ class ViewHelpers @Inject()
   def organizationName(): String = {
     maybeOrganizationName.getOrElse("")
   }
-
-  def organizationLogo(): Option[String] = {
-    maybeOrganizationLogoUrl
-  }
 }

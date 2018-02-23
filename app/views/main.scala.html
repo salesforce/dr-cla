@@ -99,8 +99,8 @@
     </head>
     <body>
         <div class="slds-container--center slds-container--medium" style="text-align: center; padding: 20px;">
-            @for(orgLogoUrl <- viewHelper.organizationLogo()) {
-                <img src="@orgLogoUrl" style="height: 57px">
+            @for(orgLogoUrl <- viewHelper.maybeOrganizationLogoUrl {
+                <img src="@orgLogoUrl" style="height: 57px" />
             }
         </div>
         @webJarsUtil.locate("slds_spinner.gif").img(Map("id" -> "loading", "alt" -> "Loading...", "style" -> "height: 4rem; vertical-align: top; display: block; margin: auto"))
