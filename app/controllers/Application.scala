@@ -104,7 +104,7 @@ class Application @Inject()
 
       claSignatureExistsFuture.map { _ =>
         val authUrl = gitHubAuthUrl(gitHubOauthScopesForClaSigning, routes.Application.signCla().absoluteURL())
-        Ok(claSignView(latestClaVersion, authUrl, maybeGitHubAuthInfo, latestClaVersion, claText(latestClaVersion), svgInline))
+        Ok(claSignView(latestClaVersion, authUrl, maybeGitHubAuthInfo, latestClaVersion, viewHelper.getClaText(), svgInline))
       } recover {
         case AlreadyExistsException(claSignature) =>
           BadRequest(claAlreadySignedView(claSignature.signedOn))
