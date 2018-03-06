@@ -1,5 +1,5 @@
-Salesforce CLA Tools
-====================
+DR CLA
+======
 
 This is a set of tools for dealing with Contributor License Agreements for Open Source Salesforce projects.
 
