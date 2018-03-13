@@ -63,6 +63,11 @@ Local Dev Setup
 
 1. Your new GitHub App will have a numeric id, set the `GITHUB_INTEGRATION_ID` env var accordingly.
 1. Your new GitHub App will have a slug / URL friendly name, set the `GITHUB_INTEGRATION_SLUG` env var accordingly.
+1. Set the `GITHUB_BOT_NAME` env var to the value of what you'd like your public facing bot to appear as
+
+```
+export GITHUB_BOT_NAME=salesforce-cla
+```
 
 Run the Web App
 ---------------
