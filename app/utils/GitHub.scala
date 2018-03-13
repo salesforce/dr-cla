@@ -64,6 +64,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
 
   val integrationId = configuration.get[String]("github.integration.id")
   val integrationSlug = configuration.get[String]("github.integration.slug")
+  val gitHubBotName = configuration.get[String]("github.botname")
 
   val integrationKeyPair: KeyPair = {
     val privateKeyString = configuration.get[String]("github.integration.private-key")
@@ -734,11 +735,11 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
           ("error", "Commit authors must be associated with GitHub users")
       }
 
-      createStatus(ownerRepo, sha, state, statusUrl, description, "salesforce-cla", token)
+      createStatus(ownerRepo, sha, state, statusUrl, description, gitHubBotName, token)
     }
 
     for {
-      _ <- createStatus(ownerRepo, sha, "pending", statusUrl, "The CLA verifier is running", "salesforce-cla", token)
+      _ <- createStatus(ownerRepo, sha, "pending", statusUrl, "The CLA verifier is running", gitHubBotName, token)
       externalContributors <- externalContributorsForPullRequest(ownerRepo, prNumber, sha, token)
       committersWithoutClas <- committersWithoutClas(externalContributors)(clasForCommitters)
       gitHubUsers = committersWithoutClas.collect { case gitHubUser: GitHubUser => gitHubUser }
