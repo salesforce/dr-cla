@@ -30,25 +30,30 @@
 
 package helpers
 
-import javax.inject.Inject
+import java.net.URL
 
-import play.api.Configuration
+import javax.inject.Inject
+import play.api.{Configuration, Environment, Mode}
 
 import scala.io.Source
+import scala.util.Try
 
 class ViewHelpers @Inject()
-(configuration: Configuration ) {
-  val maybeOrganizationName = configuration.getOptional[String]("app.organization.name")
+(configuration: Configuration, environment: Environment) {
+  val organizationName = configuration.get[String]("app.organization.name")
   val maybeOrganizationLogoUrl = configuration.getOptional[String]("app.organization.logo-url")
   val maybeOrganizationUrl = configuration.getOptional[String]("app.organization.url")
-  val claText = configuration.get[String]("app.organization.cla-url")
+  val maybeOrganizationClaUrl = configuration.getOptional[String]("app.organization.cla-url")
 
-  def organizationName(): String = {
-    maybeOrganizationName.getOrElse("")
-  }
-
-  def getClaText(): String = {
-    val text = Source.fromURL(claText)
-    text.mkString
+  val claText: String = {
+    maybeOrganizationClaUrl
+      .flatMap(claUrl => Try(new URL(claUrl)).toOption)
+      .orElse(environment.resource("sample-cla.txt"))
+      .map { claUrl =>
+        val text = Source.fromURL(claUrl)
+        text.mkString
+      } getOrElse {
+        throw new Exception("You must set the ORG_CLA environment variable.")
+      }
   }
 }

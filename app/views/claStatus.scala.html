@@ -39,16 +39,19 @@
     <h2 class="slds-text-heading--large" style="margin-bottom: 20px;">CLA Status for <a href="https://github.com/@org/@repo/pull/@prNum">@org/@repo#@prNum</a></h2>
 
     @if(missingCla.nonEmpty) {
-        One or more contributors to that Pull Request need to <a href="@claUrl">sign the CLA</a>:
-        @* todo: info for unknownCommitters *@
 
-        <ul class="slds-list_dotted" style="margin-left: 25px;">
-            @for(contributor <- missingCla) {
-                <li class="slds-list__item">
-                    @partials.contributorIdentity(contributor)
-                </li>
-            }
-        </ul>
+        @for(contributor <- missingCla) {
+            <ul class="slds-list_dotted" style="margin-left: 25px;">
+                @contributor match {
+                    case gitHubUser: GitHub.GitHubUser => {
+                        <li class="slds-list__item">The GitHub user @partials.contributorIdentity(gitHubUser) needs to <a href="@claUrl">sign the CLA</a>.</li>
+                    }
+                    case unknownCommitter: GitHub.UnknownCommitter => {
+                        <li class="slds-list__itme">The contributor @partials.contributorIdentity(unknownCommitter) needs to <a href="https://help.github.com/articles/why-are-my-commits-linked-to-the-wrong-user/#commits-are-not-linked-to-any-user">associate their commits with their GitHub user</a> then check back here.</li>
+                    }
+                }
+            </ul>
+        }
     } else {
         All external contributors have signed the CLA
     }

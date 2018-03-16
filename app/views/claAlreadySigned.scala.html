@@ -35,7 +35,7 @@
 
 @(signedOn: java.time.LocalDateTime)
 
-@main(viewHelpers.organizationName() + " CLA Signed") {
+@main(viewHelpers.organizationName + " CLA Signed") {
 
     <h2 class="slds-text-heading--large">You already signed the CLA on @signedOn.format(DateTimeFormatter.ISO_LOCAL_DATE)</h2>
 }
