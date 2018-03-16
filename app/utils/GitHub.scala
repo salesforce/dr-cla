@@ -716,7 +716,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
 
     def addComment(gitHubUsers: Set[GitHubUser], unknownCommitters: Set[UnknownCommitter]): Future[(Option[JsValue], Option[JsValue])] = {
       val gitHubUsersCommentFuture = missingClaComment(ownerRepo, prNumber, sha, claUrl, gitHubUsers, token)
-      val unknownCommittersCommentFuture = authorLoginNotFoundComment(ownerRepo, prNumber, statusUrl, unknownCommitters, token)
+      val unknownCommittersCommentFuture = authorLoginNotFoundComment(ownerRepo, prNumber, claUrl, unknownCommitters, token)
 
       for {
         gitHubUsersComment <- gitHubUsersCommentFuture
