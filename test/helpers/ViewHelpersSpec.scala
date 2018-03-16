@@ -56,9 +56,9 @@ class ViewHelpersSpec extends PlaySpec with GuiceOneAppPerTest {
 
   "ViewHelper" must {
     "give a valid organization name" in {
-      val orgName = viewHelper.organizationName()
+      val orgName = viewHelper.organizationName
       orgName mustBe a [String]
-      orgName mustEqual(testOrgName)
+      orgName mustEqual testOrgName
     }
     "give a valid organization URL" in {
       val orgUrl = viewHelper.maybeOrganizationUrl
@@ -70,5 +70,6 @@ class ViewHelpersSpec extends PlaySpec with GuiceOneAppPerTest {
       orgLogoUrl shouldBe defined
       orgLogoUrl should contain (testOrgLogoUrl)
     }
+    // todo: test loading the sample CLA in dev mode
   }
 }
