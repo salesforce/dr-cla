@@ -5,7 +5,7 @@ lazy val root = project.in(file(".")).enablePlugins(PlayScala, ForcePlugin, Auto
 
 name := "salesforce-cla"
 
-scalaVersion := "2.12.4"
+scalaVersion := "2.12.5"
 
 resolvers ++= Seq(Resolver.mavenLocal, Resolver.jcenterRepo)
 
@@ -46,13 +46,24 @@ packagedComponents.in(Force) := Seq("sf_cla")
 
 organizationName := "salesforce.com, inc."
 
-startYear := Some(2017)
-
 licenses += "BSD-3-Clause" -> url("https://opensource.org/licenses/BSD-3-Clause")
 
-headerMappings += FileType("html") -> HeaderCommentStyle.TwirlStyleBlockComment
+headerMappings += FileType("html") -> HeaderCommentStyle.twirlStyleBlockComment
 
-unmanagedSources.in(Compile, headerCreate) ++= sources.in(Compile, TwirlKeys.compileTemplates).value
+headerLicense := Some(
+  HeaderLicense.Custom(
+    """|Copyright (c) 2018, salesforce.com, inc.
+       |All rights reserved.
+       |SPDX-License-Identifier: BSD-3-Clause
+       |For full license text, see the LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause
+       |""".stripMargin
+  )
+)
+
+headerSources.in(Compile) ++= sources.in(Compile, TwirlKeys.compileTemplates).value
+
+// classpath resources do not need headers
+includeFilter.in(headerResources) := NothingFilter
 
 // license report stuff
 

@@ -10,4 +10,4 @@ addSbtPlugin("com.jamesward" % "sbt-force" % "0.0.3")
 
 addSbtPlugin("com.typesafe.sbt" % "sbt-license-report" % "1.2.0")
 
-addSbtPlugin("de.heikoseeberger" % "sbt-header" % "3.0.2")
+addSbtPlugin("de.heikoseeberger" % "sbt-header" % "5.0.0")
