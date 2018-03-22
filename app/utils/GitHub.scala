@@ -142,7 +142,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
           Range(0, 0)
       }
 
-      val pagesFutures = pages.map(req(path, accessToken, _, pageSize).map(_.json.as[JsArray]))
+      val pagesFutures = pages.map(req(path, accessToken, _, pageSize).map(response => extractor(response.json)))
 
       // assume numeric paging so we can parallelize
       Future.foldLeft(pagesFutures)(firstPageRepos)(_ ++ _)
