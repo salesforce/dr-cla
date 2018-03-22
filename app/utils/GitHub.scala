@@ -109,6 +109,10 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   }
 
   private def fetchPages(path: String, accessToken: String, pageSize: Int = 100): Future[JsArray] = {
+    fetchPagesWithExtractor(path, accessToken, pageSize)(_.as[JsArray])
+  }
+
+  private def fetchPagesWithExtractor(path: String, accessToken: String, pageSize: Int = 100)(extractor: JsValue => JsArray): Future[JsArray] = {
     import io.netty.handler.codec.http.QueryStringDecoder
 
     import collection.JavaConverters._
@@ -123,7 +127,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
 
     // get the first page
     req(path, accessToken, 1, pageSize).flatMap { response =>
-      val firstPageRepos = response.json.as[JsArray]
+      val firstPageRepos = extractor(response.json)
 
       def urlToPage(urlString: String): Int = {
         val url = new URL(urlString)
@@ -414,9 +418,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   }
 
   def installationRepositories(accessToken: String): Future[JsArray] = {
-    ws("installation/repositories", accessToken).get().flatMap(okT[JsObject]).flatMap { json =>
-      (json \ "repositories").asOpt[JsArray].fold(Future.failed[JsArray](new IllegalStateException("Data was not in the expected form")))(Future.successful)
-    }
+    fetchPagesWithExtractor("installation/repositories", accessToken)(_.\("repositories").as[JsArray])
   }
 
   def createRepo(name: String, maybeOrg: Option[String] = None, autoInit: Boolean = false)(accessToken: String): Future[JsObject] = {
