@@ -3,7 +3,7 @@ import play.twirl.sbt.Import.TwirlKeys
 
 lazy val root = project.in(file(".")).enablePlugins(PlayScala, ForcePlugin, AutomateHeaderPlugin)
 
-name := "salesforce-cla"
+name := "dr-cla"
 
 scalaVersion := "2.12.5"
 
@@ -16,18 +16,18 @@ libraryDependencies ++= Seq(
 
   "com.fasterxml.jackson.core" % "jackson-databind"                % "2.8.10",
 
-  "com.pauldijou"          %% "jwt-play-json"                      % "0.14.0",
+  "com.pauldijou"          %% "jwt-play-json"                      % "0.16.0",
 
   "org.postgresql"         %  "postgresql"                         % "42.1.4",
   "org.flywaydb"           %% "flyway-play"                        % "4.0.0",
 
-  "io.getquill"            %% "quill-async-postgres"               % "2.3.2",
+  "io.getquill"            %% "quill-async-postgres"               % "2.4.1",
 
   "org.webjars"            %% "webjars-play"                       % "2.6.3",
   "org.webjars"            %  "salesforce-lightning-design-system" % "2.4.1",
   "org.webjars"            %  "octicons"                           % "3.1.0",
 
-  "org.scalatestplus.play" %% "scalatestplus-play"                 % "3.1.1" % "test"
+  "org.scalatestplus.play" %% "scalatestplus-play"                 % "3.1.2" % "test"
 )
 
 pipelineStages := Seq(digest, gzip)
