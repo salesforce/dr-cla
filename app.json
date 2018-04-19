@@ -25,6 +25,9 @@
     "ORG_NAME": {
       "description": "The name of your organization"
     },
+    "ORG_EMAIL": {
+      "description": "The email for your organization"
+    },
     "ORG_URL": {
       "description": "The URL to redirect to for the root of this application"
     },

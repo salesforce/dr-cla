@@ -65,6 +65,7 @@ class Application @Inject()
 
   val gitHubOauthScopesForClaSigning = Seq("user:email")
   val gitHubOauthScopesForAudit = Seq("read:org")
+  val orgEmail = configuration.get[String]("app.organization.email")
 
   def index = Action {
     viewHelper.maybeOrganizationUrl.fold(Redirect(routes.Application.signCla()))(Redirect(_))
@@ -162,7 +163,7 @@ class Application @Inject()
         BadRequest(claAlreadySignedView(claSignature.signedOn))
       case e: Throwable =>
         Logger.error("CLA could not be signed.", e)
-        InternalServerError("Could not sign the CLA, please contact hax0r@sonatype.com")
+        InternalServerError("Could not sign the CLA, please contact " + orgEmail)
     }
 
   }
