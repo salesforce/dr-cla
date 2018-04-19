@@ -1,31 +1,8 @@
 /*
- * Copyright (c) 2017, salesforce.com, inc.
+ * Copyright (c) 2018, salesforce.com, inc.
  * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without modification,
- * are permitted provided that the following conditions are met:
- *
- * 1. Redistributions of source code must retain the above copyright notice, this
- *    list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright notice,
- *    this list of conditions and the following disclaimer in the documentation
- *    and/or other materials provided with the distribution.
- *
- * 3. Neither the name of the copyright holder nor the names of its contributors
- *    may be used to endorse or promote products derived from this software without
- *    specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
- * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
- * ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
+ * For full license text, see the LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause
  */
 
 package controllers
@@ -66,6 +43,7 @@ class Application @Inject()
   val gitHubOauthScopesForClaSigning = Seq("user:email")
   val gitHubOauthScopesForAudit = Seq("read:org")
   val orgEmail = configuration.get[String]("app.organization.email")
+  val gitHubOauthScopesForStatus = Seq("repo") // todo: there isn't an oauth scope that allows read-only access to private repos in other accounts
 
   def index = Action {
     viewHelper.maybeOrganizationUrl.fold(Redirect(routes.Application.signCla()))(Redirect(_))
@@ -105,7 +83,7 @@ class Application @Inject()
 
       claSignatureExistsFuture.map { _ =>
         val authUrl = gitHubAuthUrl(gitHubOauthScopesForClaSigning, routes.Application.signCla().absoluteURL())
-        Ok(claSignView(latestClaVersion, authUrl, maybeGitHubAuthInfo, latestClaVersion, viewHelper.getClaText(), svgInline))
+        Ok(claSignView(authUrl, maybeGitHubAuthInfo, latestClaVersion, viewHelper.claText, svgInline))
       } recover {
         case AlreadyExistsException(claSignature) =>
           BadRequest(claAlreadySignedView(claSignature.signedOn))
@@ -242,42 +220,54 @@ class Application @Inject()
   }
 
   def status(org: String, repo: String, prNum: Int) = Action.async { implicit request =>
-    gitHub.integrationInstallations().flatMap { installations =>
-      val maybeInstallation = installations.as[Seq[JsObject]].find { installation =>
-        val targetType = (installation \ "target_type").as[String]
-        val repositorySelection = (installation \ "repository_selection").as[String]
-        val accountLogin = (installation \ "account" \ "login").as[String]
+    getGitHubAuthInfo(request).flatMap { maybeGitHubAuthInfo =>
+      gitHub.integrationInstallations().flatMap { installations =>
+        val maybeOrgInstall = installations.as[Seq[JsObject]].find { repoJson =>
+          val login = (repoJson \ "account" \ "login").as[String]
+          login == org
+        }
 
-        val orgWithAllRepos = targetType == "Organization" && repositorySelection == "all" && accountLogin == org
+        maybeOrgInstall.fold(Future.successful(BadRequest("GitHub App not installed on that org"))) { orgInstall =>
+          val id = (orgInstall \ "id").as[Int]
+          gitHub.installationAccessTokens(id).flatMap { installationAccessTokenJson =>
+            val installationAccessToken = (installationAccessTokenJson \ "token").as[String]
 
-        // todo: other possible scenarios (some repos, user owned, etc)
+            gitHub.installationRepositories(installationAccessToken).flatMap { installationRepositories =>
 
-        orgWithAllRepos
-      }
+              val maybeRepo = installationRepositories.value.find { repoJson =>
+                (repoJson \ "name").asOpt[String].contains(repo)
+              }
 
-      maybeInstallation.fold {
-        // no access
-        Future.successful(BadRequest("Can't get status for that repo"))
-      } { installation =>
-        val id = (installation \ "id").as[Int]
-        gitHub.installationAccessTokens(id).flatMap { installationAccessTokenJson =>
-          val installationAccessToken = (installationAccessTokenJson \ "token").as[String]
-          val ownerRepo = org + "/" + repo
+              maybeRepo.fold(Future.successful(BadRequest("GitHub App not enabled on that repo"))) { repoJson =>
+                val fullName = (repoJson \ "full_name").as[String]
+                val isPrivate = (repoJson \ "private").as[Boolean]
 
-          gitHub.repo(ownerRepo)(installationAccessToken).flatMap { repoJson =>
-            val isPrivate = (repoJson \ "private").as[Boolean]
-
-            if (isPrivate) {
-              Future.successful(NotFound)
-            }
-            else {
-              gitHub.getPullRequest(ownerRepo, prNum, installationAccessToken).flatMap { pullRequest =>
-                gitHub.pullRequestWithCommitsAndStatus(installationAccessToken)(pullRequest).flatMap { pullRequestDetails =>
-                  validatePullRequest(pullRequestDetails, installationAccessToken).map {
-                    case (_, claMissing, _) =>
-                      val claUrl = routes.Application.signCla().absoluteURL()
-                      Ok(claStatusView(org, repo, prNum, claMissing, claUrl))
+                def renderStatus(accessToken: String): Future[Result] = {
+                  gitHub.getPullRequest(fullName, prNum, accessToken).flatMap { pullRequest =>
+                    gitHub.pullRequestWithCommitsAndStatus(accessToken)(pullRequest).flatMap { pullRequestDetails =>
+                      validatePullRequest(pullRequestDetails, accessToken).map {
+                        case (_, claMissing, _) =>
+                          val claUrl = routes.Application.signCla().absoluteURL()
+                          Ok(claStatusView(org, repo, prNum, claMissing, claUrl))
+                      }
+                    }
                   }
+                }
+
+                if (isPrivate) {
+                  maybeGitHubAuthInfo.fold {
+                    Future.successful(
+                      Redirect(
+                        gitHubAuthUrl(gitHubOauthScopesForStatus, routes.Application.status(org, repo, prNum).absoluteURL())
+                      )
+                    )
+                  } { gitHubAuthInfo =>
+                    val userAccessToken = crypto.decryptAES(gitHubAuthInfo.encAuthToken)
+                    renderStatus(userAccessToken)
+                  }
+                }
+                else {
+                 renderStatus(installationAccessToken)
                 }
               }
             }
@@ -419,14 +409,6 @@ class Application @Inject()
 
   private def redirectUri(implicit request: RequestHeader): String = {
     routes.Application.gitHubOauthCallback("", "").absoluteURL(request.secure).stripSuffix("?code=&state=")
-  }
-
-  private def claText(version: String): String = {
-    val claPath = s"clas/icla-$version.txt"
-    val claTextInputStream = env.resourceAsStream(claPath).getOrElse(throw new IllegalStateException(s"Could not locate the CLA: $claPath"))
-    val claText = Source.fromInputStream(claTextInputStream).mkString
-    claTextInputStream.close()
-    claText
   }
 
   case class AlreadyExistsException(claSignature: ClaSignature) extends Exception

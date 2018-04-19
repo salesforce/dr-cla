@@ -1,31 +1,8 @@
 /*
- * Copyright (c) 2017, salesforce.com, inc.
+ * Copyright (c) 2018, salesforce.com, inc.
  * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without modification,
- * are permitted provided that the following conditions are met:
- *
- * 1. Redistributions of source code must retain the above copyright notice, this
- *    list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright notice,
- *    this list of conditions and the following disclaimer in the documentation
- *    and/or other materials provided with the distribution.
- *
- * 3. Neither the name of the copyright holder nor the names of its contributors
- *    may be used to endorse or promote products derived from this software without
- *    specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
- * WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
- * DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
- * ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
- * (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
- * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
- * ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
- * SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+ * SPDX-License-Identifier: BSD-3-Clause
+ * For full license text, see the LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause
  */
 
 package utils
@@ -133,6 +110,10 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   }
 
   private def fetchPages(path: String, accessToken: String, pageSize: Int = 100): Future[JsArray] = {
+    fetchPagesWithExtractor(path, accessToken, pageSize)(_.as[JsArray])
+  }
+
+  private def fetchPagesWithExtractor(path: String, accessToken: String, pageSize: Int = 100)(extractor: JsValue => JsArray): Future[JsArray] = {
     import io.netty.handler.codec.http.QueryStringDecoder
 
     import collection.JavaConverters._
@@ -147,7 +128,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
 
     // get the first page
     req(path, accessToken, 1, pageSize).flatMap { response =>
-      val firstPageRepos = response.json.as[JsArray]
+      val firstPageRepos = extractor(response.json)
 
       def urlToPage(urlString: String): Int = {
         val url = new URL(urlString)
@@ -162,7 +143,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
           Range(0, 0)
       }
 
-      val pagesFutures = pages.map(req(path, accessToken, _, pageSize).map(_.json.as[JsArray]))
+      val pagesFutures = pages.map(req(path, accessToken, _, pageSize).map(response => extractor(response.json)))
 
       // assume numeric paging so we can parallelize
       Future.foldLeft(pagesFutures)(firstPageRepos)(_ ++ _)
@@ -438,9 +419,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   }
 
   def installationRepositories(accessToken: String): Future[JsArray] = {
-    ws("installation/repositories", accessToken).get().flatMap(okT[JsObject]).flatMap { json =>
-      (json \ "repositories").asOpt[JsArray].fold(Future.failed[JsArray](new IllegalStateException("Data was not in the expected form")))(Future.successful)
-    }
+    fetchPagesWithExtractor("installation/repositories", accessToken)(_.\("repositories").as[JsArray])
   }
 
   def createRepo(name: String, maybeOrg: Option[String] = None, autoInit: Boolean = false)(accessToken: String): Future[JsObject] = {
@@ -717,7 +696,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
 
     def addComment(gitHubUsers: Set[GitHubUser], unknownCommitters: Set[UnknownCommitter]): Future[(Option[JsValue], Option[JsValue])] = {
       val gitHubUsersCommentFuture = missingClaComment(ownerRepo, prNumber, sha, claUrl, gitHubUsers, token)
-      val unknownCommittersCommentFuture = authorLoginNotFoundComment(ownerRepo, prNumber, statusUrl, unknownCommitters, token)
+      val unknownCommittersCommentFuture = authorLoginNotFoundComment(ownerRepo, prNumber, claUrl, unknownCommitters, token)
 
       for {
         gitHubUsersComment <- gitHubUsersCommentFuture
@@ -851,7 +830,24 @@ object GitHub {
   sealed trait Contributor
   case class GitHubUser(username: String) extends Contributor
   case class UnknownCommitter(maybeName: Option[String], maybeEmail: Option[String]) extends Contributor {
-    def toStringOpt: Option[String] = (maybeName, maybeEmail) match {
+
+    def publicEmail(email: String): Option[String] = {
+      def obfuscate(s: String): String = {
+        s.take(1) + "***"
+      }
+
+      email.split("@") match {
+        case Array(username, domain) =>
+          val domainParts = domain.split("\\.").reverse
+          val nonRootDomainParts = domainParts.tail.map(obfuscate).reverse.mkString(".")
+          val rootDomainPart = domainParts.head
+          Some(obfuscate(username) + "@" + nonRootDomainParts + "." + rootDomainPart)
+        case _ =>
+          None
+      }
+    }
+
+    def toStringOpt: Option[String] = (maybeName, maybeEmail.flatMap(publicEmail)) match {
       case (Some(name), Some(email)) =>
         Some(s"$name <$email>")
       case (Some(name), None) =>
