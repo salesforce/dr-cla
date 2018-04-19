@@ -44,6 +44,7 @@ import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.libs.json._
 import play.api.libs.ws.WSClient
 import play.api.test.Helpers._
+import utils.GitHub.UnknownCommitter
 
 import scala.annotation.tailrec
 import scala.concurrent.{ExecutionContext, Future}
@@ -741,6 +742,13 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
     "work" in {
       val repoContributros = await(gitHub.repoContributors(testOrgRepo, testIntegrationToken))
       repoContributros.value.exists(_.\("login").as[String] == testLogin1) must be (true)
+    }
+  }
+
+  "UnknownCommitter.toStringOpt" should {
+    "obfuscate emails" in {
+      UnknownCommitter(None, Some("asdf@foobar.com")).toStringOpt must contain ("a***@f***.com")
+      UnknownCommitter(None, Some("asdf@foo.bar.com")).toStringOpt must contain ("a***@f***.b***.com")
     }
   }
 

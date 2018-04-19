@@ -829,7 +829,24 @@ object GitHub {
   sealed trait Contributor
   case class GitHubUser(username: String) extends Contributor
   case class UnknownCommitter(maybeName: Option[String], maybeEmail: Option[String]) extends Contributor {
-    def toStringOpt: Option[String] = (maybeName, maybeEmail) match {
+
+    def publicEmail(email: String): Option[String] = {
+      def obfuscate(s: String): String = {
+        s.take(1) + "***"
+      }
+
+      email.split("@") match {
+        case Array(username, domain) =>
+          val domainParts = domain.split("\\.").reverse
+          val nonRootDomainParts = domainParts.tail.map(obfuscate).reverse.mkString(".")
+          val rootDomainPart = domainParts.head
+          Some(obfuscate(username) + "@" + nonRootDomainParts + "." + rootDomainPart)
+        case _ =>
+          None
+      }
+    }
+
+    def toStringOpt: Option[String] = (maybeName, maybeEmail.flatMap(publicEmail)) match {
       case (Some(name), Some(email)) =>
         Some(s"$name <$email>")
       case (Some(name), None) =>
