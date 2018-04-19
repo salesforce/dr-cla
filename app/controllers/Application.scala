@@ -162,7 +162,7 @@ class Application @Inject()
         BadRequest(claAlreadySignedView(claSignature.signedOn))
       case e: Throwable =>
         Logger.error("CLA could not be signed.", e)
-        InternalServerError("Could not sign the CLA, please contact oss-cla@salesforce.com")
+        InternalServerError("Could not sign the CLA, please contact hax0r@sonatype.com")
     }
 
   }
