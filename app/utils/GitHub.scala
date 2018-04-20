@@ -42,6 +42,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   val integrationId = configuration.get[String]("github.integration.id")
   val integrationSlug = configuration.get[String]("github.integration.slug")
   val gitHubBotName = configuration.get[String]("github.botname")
+  val orgName = configuration.get[String]("app.organization.name")
 
   val integrationKeyPair: KeyPair = {
     val privateKeyString = configuration.get[String]("github.integration.private-key")
@@ -626,7 +627,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   def missingClaComment(ownerRepo: String, prNumber: Int, sha: String, claUrl: String, gitHubUsers: Set[GitHubUser], accessToken: String): Future[Option[JsValue]] = {
     if (gitHubUsers.nonEmpty) {
       issueComments(ownerRepo, prNumber, accessToken).flatMap { comments =>
-        val message = messagesApi("cla.missing", gitHubUsers.map(_.username).mkString("@", " @", ""), claUrl)
+        val message = messagesApi("cla.missing", gitHubUsers.map(_.username).mkString("@", " @", ""), orgName,  claUrl)
 
         val alreadyCommented = comments.value.exists(_.\("body").as[String] == message)
         if (!alreadyCommented) {
@@ -649,11 +650,11 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
       issueComments(ownerRepo, prNumber, accessToken).flatMap { comments =>
 
         val message = if (committers.isEmpty) {
-          messagesApi("cla.author-not-found-without-name", claUrl)
+          messagesApi("cla.author-not-found-without-name", orgName, claUrl)
         }
         else {
           val names = committers.mkString(" ")
-          messagesApi("cla.author-not-found-with-name", names, claUrl)
+          messagesApi("cla.author-not-found-with-name", names, orgName, claUrl)
         }
 
         val alreadyCommented = comments.value.exists(_.\("body").as[String] == message)
