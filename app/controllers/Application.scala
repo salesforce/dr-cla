@@ -42,7 +42,7 @@ class Application @Inject()
 
   val gitHubOauthScopesForClaSigning = Seq("user:email")
   val gitHubOauthScopesForAudit = Seq("read:org")
-  val orgEmail = configuration.getOptional[String]("app.organization.email")
+  val maybeOrgEmail = configuration.getOptional[String]("app.organization.email")
   val gitHubOauthScopesForStatus = Seq("repo") // todo: there isn't an oauth scope that allows read-only access to private repos in other accounts
 
   def index = Action {
@@ -143,7 +143,7 @@ class Application @Inject()
         Logger.error("CLA could not be signed.", e)
         val baseErrorMessage = "Could not sign the CLA"
         val errorMessage = maybeOrgEmail.fold(baseErrorMessage) { orgEmail =>
-          baseErrorMessage + ", please contact" + orgEmail)
+          baseErrorMessage + ", please contact" + orgEmail
         }
         InternalServerError(errorMessage)
     }
