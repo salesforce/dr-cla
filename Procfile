@@ -1,1 +1,1 @@
-web: target/universal/stage/bin/salesforce-cla -Dhttp.port=$PORT
+web: target/universal/stage/bin/dr-cla -Dhttp.port=$PORT
