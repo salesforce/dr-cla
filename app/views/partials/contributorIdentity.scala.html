@@ -7,13 +7,13 @@
 
 @import _root_.utils.GitHub
 
-@(contributor: GitHub.Contributor)
+@(contributor: GitHub.Contributor, hideEmail: Boolean = true)
 
 @contributor match {
     case gitHubUser: GitHub.GitHubUser => {
         <a href="https://github.com/@gitHubUser.username" style="display: inline;">@gitHubUser.username</a>
     }
     case unknownCommitter: GitHub.UnknownCommitter => {
-        @unknownCommitter.toStringOpt.getOrElse("Unknown user")
+        @unknownCommitter.toStringOpt(hideEmail).getOrElse("Unknown user")
     }
 }

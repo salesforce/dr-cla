@@ -8,8 +8,8 @@
 package controllers
 
 import java.time.LocalDateTime
-import javax.inject.Inject
 
+import javax.inject.Inject
 import akka.http.scaladsl.model.Uri
 import akka.http.scaladsl.model.Uri.Query
 import models._
@@ -21,7 +21,7 @@ import play.api.libs.json.{JsObject, JsValue}
 import play.api.mvc.Results.EmptyContent
 import play.api.mvc._
 import play.twirl.api.Html
-import utils.GitHub.IncorrectResponseStatus
+import utils.GitHub.{Contributor, ContributorWithMetrics, IncorrectResponseStatus}
 import utils.{Crypto, DB, GitHub}
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -308,26 +308,28 @@ class Application @Inject()
 
     for {
       collaborators <- collaboratorsFuture
-      allContributors <- allContributorsFuture.map(gitHub.contributorLoginsAndContributions)
-      externalContributors = gitHub.externalContributors(allContributors.keySet, collaborators)
+      allContributors <- allContributorsFuture
+      externalContributors = gitHub.externalContributors(allContributors.map(_.contributor), collaborators)
       gitHubUsers = externalContributors.collect { case gitHubUser: GitHub.GitHubUser => gitHubUser }
       clasForExternalContributors <- db.findClaSignaturesByGitHubIds(gitHubUsers)
     } yield {
 
-      val externalContributorsDetails = externalContributors.map { gitHubId =>
-        val maybeClaSignature = clasForExternalContributors.find(_.contactGitHubId == gitHubId)
-        val commits = allContributors.getOrElse(gitHubId, 0)
-        gitHubId -> (maybeClaSignature, commits)
-      }.toMap
-
-      val internalContributorsWithCommits = collaborators.flatMap { contributor =>
-        val maybeContributions = allContributors.get(contributor)
-        maybeContributions.fold(Set.empty[(GitHub.Contributor, Int)]) { contributions =>
-          Set(contributor -> contributions)
+      val externalContributorsWithClas = allContributors.filter { contributorWithMetrics =>
+        externalContributors.contains(contributorWithMetrics.contributor)
+      } map { contributorWithMetrics =>
+        contributorWithMetrics.contributor match {
+          case gitHubUser: GitHub.GitHubUser =>
+            contributorWithMetrics -> clasForExternalContributors.find(_.contactGitHubId == gitHubUser.username)
+          case _ =>
+            contributorWithMetrics -> None
         }
-      }.toMap
+      }
 
-      Ok(views.html.auditRepo(externalContributorsDetails, internalContributorsWithCommits))
+      val internalContributors = allContributors.filter { contributorWithMetrics =>
+        collaborators.contains(contributorWithMetrics.contributor)
+      }
+
+      Ok(views.html.auditRepo(externalContributorsWithClas, internalContributors))
     }
   }
 

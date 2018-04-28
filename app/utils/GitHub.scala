@@ -24,6 +24,7 @@ import play.api.http.{HeaderNames, HttpVerbs, MimeTypes, Status}
 import play.api.i18n.{Lang, MessagesApi}
 import play.api.libs.json.Reads._
 import play.api.libs.json._
+import play.api.libs.functional.syntax._
 import play.api.libs.ws.{WSClient, WSRequest, WSResponse}
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -378,15 +379,41 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     ws(path, accessToken).patch(json).flatMap(okT[JsObject])
   }
 
+  def commit(ownerRepo: String, message: String, tree: String, parents: Set[String], maybeAuthor: Option[(String, String)], accessToken: String): Future[JsObject] = {
+    val path = s"repos/$ownerRepo/git/commits"
+
+    val json = Json.obj(
+      "message" -> message,
+      "tree" -> tree,
+      "parents" -> parents,
+      "author" -> maybeAuthor.map { case (name, email) =>
+        Json.obj(
+          "name" -> name,
+          "email" -> email
+        )
+      }
+    )
+
+    ws(path, accessToken).post(json).flatMap(createdT[JsObject])
+  }
+
   def repoCommit(ownerRepo: String, sha: String, accessToken: String): Future[JsObject] = {
     val path = s"repos/$ownerRepo/commits/$sha"
     ws(path, accessToken).get().flatMap(okT[JsObject])
   }
 
-  // todo: definitely will need paging
+  def updateGitRef(ownerRepo: String, sha: String, ref: String, accessToken: String): Future[JsObject] = {
+    val path = s"repos/$ownerRepo/git/refs/$ref"
+    val json = Json.obj(
+      "sha" -> sha
+    )
+
+    ws(path, accessToken).patch(json).flatMap(okT[JsObject])
+  }
+
   def repoCommits(ownerRepo: String, accessToken: String): Future[JsArray] = {
     val path = s"repos/$ownerRepo/commits"
-    ws(path, accessToken).get().flatMap(okT[JsArray])
+    fetchPages(path, accessToken)
   }
 
   def pullRequestWithCommitsAndStatus(accessToken:String)(pullRequest: JsValue): Future[JsObject] = {
@@ -578,30 +605,24 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     }
   }
 
-  def repoContributors(ownerRepo: String, accessToken: String): Future[JsArray] = {
-    val path = s"repos/$ownerRepo/contributors"
+  def repoContributors(ownerRepo: String, accessToken: String): Future[Set[ContributorWithMetrics]] = {
+    for {
+      commits <- repoCommits(ownerRepo, accessToken)
+    } yield {
+      val contributorsWithCommits = commits.value.groupBy[Contributor] { commit =>
+        (commit \ "author").asOpt[GitHubUser].getOrElse {
+          (commit \ "commit" \ "author").as[UnknownCommitter]
+        }
+      }
 
-    ws(path, accessToken).get().flatMap(okT[JsArray])
+      contributorsWithCommits.map { case (contributor, contributorCommits) =>
+        ContributorWithMetrics(contributor, contributorCommits.size)
+      }.toSet
+    }
   }
 
   def externalContributors(contributors: Set[Contributor], internalContributors: Set[Contributor]): Set[Contributor] = {
     contributors.diff(internalContributors)
-  }
-
-  /*
-  def logins(users: JsArray): Set[GitHubUser] = {
-    users.value.map(_.\("login").as[String]).map(GitHubUser).toSet
-  }
-  */
-
-  def contributorLoginsAndContributions(contributors: JsArray): Map[Contributor, Int] = {
-    val loginAndCount = contributors.value.map { contributor =>
-      val login = contributor.\("login").as[String]
-      val count = contributor.\("contributions").as[Int]
-      GitHubUser(login) -> count
-    }
-
-    loginAndCount.toMap
   }
 
   def externalContributorsForPullRequest(ownerRepo: String, prNumber: Int, sha: String, accessToken: String): Future[Set[Contributor]] = {
@@ -614,7 +635,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     } yield externalContributors(pullRequestCommitters, collaborators)
   }
 
-  def committersWithoutClas(externalContributors: Set[Contributor])(clasForCommitters: (Set[Contributor]) => Future[Set[ClaSignature]]): Future[Set[Contributor]] = {
+  def committersWithoutClas(externalContributors: Set[Contributor])(clasForCommitters: Set[Contributor] => Future[Set[ClaSignature]]): Future[Set[Contributor]] = {
     for {
       clasForCommitters <- clasForCommitters(externalContributors)
     } yield {
@@ -645,7 +666,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
 
   def authorLoginNotFoundComment(ownerRepo: String, prNumber: Int, claUrl: String, unknownCommitters: Set[UnknownCommitter], accessToken: String): Future[Option[JsValue]] = {
     if (unknownCommitters.nonEmpty) {
-      val committers = unknownCommitters.flatMap(_.toStringOpt)
+      val committers = unknownCommitters.flatMap(_.toStringOpt())
 
       issueComments(ownerRepo, prNumber, accessToken).flatMap { comments =>
 
@@ -847,16 +868,33 @@ object GitHub {
       }
     }
 
-    def toStringOpt: Option[String] = (maybeName, maybeEmail.flatMap(publicEmail)) match {
-      case (Some(name), Some(email)) =>
-        Some(s"$name <$email>")
-      case (Some(name), None) =>
-        Some(name)
-      case (None, Some(email)) =>
-        Some(email)
-      case (None, None) =>
-        None
+    def toStringOpt(hideEmail: Boolean = true): Option[String] = {
+      val maybeEmailPublic = if (hideEmail) {
+        maybeEmail.flatMap(publicEmail)
+      }
+      else {
+        maybeEmail
+      }
+
+      (maybeName, maybeEmailPublic) match {
+        case (Some(name), Some(email)) =>
+          Some(s"$name <$email>")
+        case (Some(name), None) =>
+          Some(name)
+        case (None, Some(email)) =>
+          Some(email)
+        case (None, None) =>
+          None
+      }
     }
   }
+
+  case class ContributorWithMetrics(contributor: Contributor, numCommits: Int)
+
+  implicit val gitHubUserReads: Reads[GitHubUser] = (__ \ "login").read[String].map(GitHubUser)
+  implicit val unknownCommitterReads: Reads[UnknownCommitter] = (
+    (__ \ "name").readNullable[String] ~
+    (__ \ "email").readNullable[String]
+  )(UnknownCommitter)
 
 }

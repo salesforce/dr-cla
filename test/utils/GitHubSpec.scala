@@ -9,7 +9,7 @@ package utils
 
 import java.time.LocalDateTime
 
-import models.{ClaSignature, Contact}
+import models.ClaSignature
 import modules.{Database, DatabaseMock}
 import org.scalatestplus.play.guice.GuiceOneAppPerSuite
 import org.scalatestplus.play.PlaySpec
@@ -21,7 +21,7 @@ import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.libs.json._
 import play.api.libs.ws.WSClient
 import play.api.test.Helpers._
-import utils.GitHub.UnknownCommitter
+import utils.GitHub._
 
 import scala.annotation.tailrec
 import scala.concurrent.{ExecutionContext, Future}
@@ -98,7 +98,7 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
   private def waitForCommits(ownerRepo: String, token: String, tryNum: Int = 0) {
     val repoCommits = Try(await(gitHub.repoCommits(ownerRepo, token))).getOrElse(JsArray())
 
-    if (repoCommits.value.isEmpty && (tryNum < maxTries)) {
+    if (repoCommits.value.isEmpty && tryNum < maxTries) {
       Thread.sleep(1000)
       waitForCommits(ownerRepo, token, tryNum + 1)
     }
@@ -109,9 +109,9 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
 
   @tailrec
   private def waitForCommit(ownerRepo: String, sha: String, token: String, tryNum: Int = 0) {
-    val repoCommit = Try(await(gitHub.repoCommit(ownerRepo, sha, token)))
+    val repoCommit = await(gitHub.repoCommits(ownerRepo, token)).value.find(_.\("sha").as[String] == sha)
 
-    if (repoCommit.isFailure && (tryNum < maxTries)) {
+    if (repoCommit.isEmpty && (tryNum < maxTries)) {
       Thread.sleep(1000)
       waitForCommit(ownerRepo, sha, token, tryNum + 1)
     }
@@ -193,6 +193,20 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
 
     waitForCommits(ownerRepo, testToken1)
     waitForCommits(ownerRepo, testToken2)
+
+    // add an commit with a non-github committer
+    val commit = await(gitHub.repoCommits(ownerRepo, testToken1)).value.head
+
+    val sha = (commit \ "sha").as[String]
+    val tree = (commit \ "commit" \ "tree" \ "sha").as[String]
+
+    val newCommit = await(gitHub.commit(ownerRepo, "test non-github commit", tree, Set(sha), Some(repoName, s"$repoName@$repoName.com"), testToken1))
+
+    val newSha = (newCommit \ "sha").as[String]
+
+    val updateRef = await(gitHub.updateGitRef(ownerRepo, newSha, "heads/master", testToken1))
+
+    waitForCommit(ownerRepo, newSha, testToken1)
 
     ownerRepo
   }
@@ -717,15 +731,17 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
 
   "repoContributors" should {
     "work" in {
-      val repoContributros = await(gitHub.repoContributors(testOrgRepo, testIntegrationToken))
-      repoContributros.value.exists(_.\("login").as[String] == testLogin1) must be (true)
+      val repoContributors = await(gitHub.repoContributors(testOrgRepo, testIntegrationToken)).map(_.contributor)
+      val repoName = testOrgRepo.split("/").last
+      repoContributors contains GitHubUser(testLogin1)
+      repoContributors contains UnknownCommitter(Some(repoName), Some(s"$repoName@$repoName.com"))
     }
   }
 
   "UnknownCommitter.toStringOpt" should {
     "obfuscate emails" in {
-      UnknownCommitter(None, Some("asdf@foobar.com")).toStringOpt must contain ("a***@f***.com")
-      UnknownCommitter(None, Some("asdf@foo.bar.com")).toStringOpt must contain ("a***@f***.b***.com")
+      UnknownCommitter(None, Some("asdf@foobar.com")).toStringOpt() must contain ("a***@f***.com")
+      UnknownCommitter(None, Some("asdf@foo.bar.com")).toStringOpt() must contain ("a***@f***.b***.com")
     }
   }
 
