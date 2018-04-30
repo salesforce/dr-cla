@@ -5,7 +5,7 @@ lazy val root = project.in(file(".")).enablePlugins(PlayScala, ForcePlugin, Auto
 
 name := "dr-cla"
 
-scalaVersion := "2.12.5"
+scalaVersion := "2.12.6"
 
 resolvers ++= Seq(Resolver.mavenLocal, Resolver.jcenterRepo)
 
