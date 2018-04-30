@@ -40,7 +40,7 @@ Local Dev Setup
         # CREATE DATABASE "salesforcecla-test" ENCODING 'UTF8' OWNER salesforcecla;
 
 
-1. Setup a new oAuth App
+1. Setup a new OAuth App for CLA signing:
     - This will be at: `https://github.com/organizations/{your-organization}/settings/applications/new`
     - *Application name* = `Something descriptive`
     - *Authorization callback URL* = `https://YOUR_NGROK_ID.ngrok.io/_github_oauth_callback`
@@ -57,6 +57,8 @@ Local Dev Setup
     - Under *Subscribe to events* select *Pull request*
 
     It is not required, but if you set the GitHub Integration Secret Token, then set the `GITHUB_INTEGRATION_SECRET_TOKEN` env var accordingly.
+
+1. Set the `GITHUB_INTEGRATION_CLIENT_ID` and `GITHUB_INTEGRATION_CLIENT_SECRET` env vars with the OAuth app associated with the GitHub App.
 
 1. Generate and save a new Private key for the new Integration, then set the `GITHUB_INTEGRATION_PRIVATE_KEY` env var accordingly, like:
 

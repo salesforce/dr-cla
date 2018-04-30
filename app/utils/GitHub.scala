@@ -42,6 +42,10 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
 
   val integrationId = configuration.get[String]("github.integration.id")
   val integrationSlug = configuration.get[String]("github.integration.slug")
+
+  val integrationClientId = configuration.get[String]("github.integration.client-id")
+  val integrationClientSecret = configuration.get[String]("github.integration.client-secret")
+
   val gitHubBotName = configuration.get[String]("github.botname")
   val orgName = configuration.get[String]("app.organization.name")
 
@@ -70,10 +74,10 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
       )
   }
 
-  def accessToken(code: String): Future[String] = {
+  def accessToken(code: String, oauthClientId: String, oauthClientSecret: String): Future[String] = {
     val wsFuture = ws.url("https://github.com/login/oauth/access_token").withQueryStringParameters(
-      "client_id" -> clientId,
-      "client_secret" -> clientSecret,
+      "client_id" -> oauthClientId,
+      "client_secret" -> oauthClientSecret,
       "code" -> code
     ).withHttpHeaders(HeaderNames.ACCEPT -> MimeTypes.JSON).execute(HttpVerbs.POST)
 
@@ -124,12 +128,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     }
 
     def req(path: String, accessToken: String, page: Int, pageSize: Int): Future[WSResponse] = {
-      ws(path, accessToken).withQueryStringParameters("page" -> page.toString, "per_page" -> pageSize.toString).get().flatMap { response =>
-        response.status match {
-          case Status.OK => Future.successful(response)
-          case _ => Future.failed(new Exception(response.body))
-        }
-      }
+      ws(path, accessToken).withQueryStringParameters("page" -> page.toString, "per_page" -> pageSize.toString).get().flatMap(ok)
     }
 
     // get the first page
@@ -312,7 +311,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   // but actually returns 200 : OK
   def removeLabel(ownerRepo: String, name: String, issueNumber: Int, accessToken: String): Future[Unit] = {
     val path = s"repos/$ownerRepo/issues/$issueNumber/labels/$name"
-    ws(path, accessToken).delete().flatMap(ok)
+    ws(path, accessToken).delete().flatMap(ok).map(_ => Unit)
   }
 
   // todo: do not re-apply an existing label
@@ -364,7 +363,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   // todo make the tests cleanup their webhooks, pr webhooks have a limit of 20
   def deleteOrgWebhook(org: String, hookId: Int, accessToken: String): Future[Unit] = {
     val path = s"orgs/$org/hooks/$hookId"
-    ws(path, accessToken).delete().flatMap(nocontent)
+    ws(path, accessToken).delete().flatMap(nocontent).map(_ => Unit)
   }
 
   def orgMembers(org: String, accessToken: String): Future[JsArray] = {
@@ -450,8 +449,16 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     ws.get().flatMap(okT[JsArray])
   }
 
+  def integrationInstallations(accessToken: String): Future[JsArray] = {
+    fetchPagesWithExtractor(s"user/installations", accessToken)(_.\("installations").as[JsArray])
+  }
+
   def installationRepositories(accessToken: String): Future[JsArray] = {
     fetchPagesWithExtractor("installation/repositories", accessToken)(_.\("repositories").as[JsArray])
+  }
+
+  def installationRepositories(installationId: Int, accessToken: String): Future[JsArray] = {
+    fetchPagesWithExtractor(s"user/installations/$installationId/repositories", accessToken)(_.\("repositories").as[JsArray])
   }
 
   def createRepo(name: String, maybeOrg: Option[String] = None, autoInit: Boolean = false)(accessToken: String): Future[JsObject] = {
@@ -470,7 +477,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   }
 
   def deleteRepo(ownerRepo: String)(accessToken: String): Future[Unit] = {
-    ws(s"repos/$ownerRepo", accessToken).delete().flatMap(nocontent)
+    ws(s"repos/$ownerRepo", accessToken).delete().flatMap(nocontent).map(_ => Unit)
   }
 
   def forkRepo(ownerRepo: String)(accessToken: String): Future[JsObject] = {
@@ -514,7 +521,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   }
 
   def addCollaborator(ownerRepo: String, username: String, accessToken: String): Future[Unit] = {
-    ws(s"repos/$ownerRepo/collaborators/$username", accessToken).execute(HttpVerbs.PUT).flatMap(nocontent)
+    ws(s"repos/$ownerRepo/collaborators/$username", accessToken).execute(HttpVerbs.PUT).flatMap(nocontent).map(_ => Unit)
   }
 
   def createBranch(ownerRepo: String, name: String, sha: String, accessToken: String): Future[JsObject] = {
@@ -798,7 +805,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     } yield integrationAccessTokens.toMap
   }
 
-  private def ok(response: WSResponse): Future[Unit] = status(Status.OK, response)
+  private def ok(response: WSResponse): Future[WSResponse] = status(Status.OK, response)
 
   private def okT[T](response: WSResponse)(implicit r: Reads[T]): Future[T] = statusT[T](Status.OK, response)
 
@@ -806,7 +813,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
 
   private def createdT[T](response: WSResponse)(implicit r: Reads[T]): Future[T] = statusT[T](Status.CREATED, response)
 
-  private def nocontent(response: WSResponse): Future[Unit] = status(Status.NO_CONTENT, response)
+  private def nocontent(response: WSResponse): Future[WSResponse] = status(Status.NO_CONTENT, response)
 
   private def statusT[T](statusCode: Int, response: WSResponse)(implicit r: Reads[T]): Future[T] = {
     if (response.status == statusCode) {
@@ -819,9 +826,9 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     }
   }
 
-  private def status(statusCode: Int, response: WSResponse): Future[Unit] = {
+  private def status(statusCode: Int, response: WSResponse): Future[WSResponse] = {
     if (response.status == statusCode) {
-      Future.successful(Unit)
+      Future.successful(response)
     } else {
       val messageTry = Try((response.json \ "message").as[String])
       Future.failed(GitHub.IncorrectResponseStatus(statusCode, response.status, messageTry.getOrElse(response.body)))

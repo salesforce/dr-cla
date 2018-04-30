@@ -17,22 +17,20 @@ import org.apache.commons.codec.digest.HmacUtils
 import org.webjars.WebJarAssetLocator
 import org.webjars.play.WebJarsUtil
 import play.api.{Configuration, Environment, Logger}
-import play.api.libs.json.{JsObject, JsValue}
+import play.api.libs.json.{JsArray, JsObject, JsValue}
 import play.api.mvc.Results.EmptyContent
 import play.api.mvc._
 import play.twirl.api.Html
-import utils.GitHub.{Contributor, ContributorWithMetrics, IncorrectResponseStatus}
 import utils.{Crypto, DB, GitHub}
 
 import scala.concurrent.{ExecutionContext, Future}
-import scala.io.Source
 import scala.util.{Failure, Success, Try}
 import scala.xml.{Comment, Node}
 
 
 class Application @Inject()
   (env: Environment, gitHub: GitHub, db: DB, crypto: Crypto, configuration: Configuration, webJarsUtil: WebJarsUtil)
-  (claSignView: views.html.claSign, claSignedView: views.html.claSigned, claAlreadySignedView: views.html.claAlreadySigned, claStatusView: views.html.claStatus, auditView: views.html.audit, auditReposView: views.html.auditRepos, auditError: views.html.auditError)
+  (claSignView: views.html.claSign, claSignedView: views.html.claSigned, claAlreadySignedView: views.html.claAlreadySigned, claStatusView: views.html.claStatus, auditView: views.html.audit, auditReposView: views.html.auditRepos)
   (viewHelper: helpers.ViewHelpers)
   (implicit ec: ExecutionContext)
   extends InjectedController {
@@ -41,7 +39,6 @@ class Application @Inject()
   val latestClaVersion = claVersions.head
 
   val gitHubOauthScopesForClaSigning = Seq("user:email")
-  val gitHubOauthScopesForAudit = Seq("read:org")
   val maybeOrgEmail = configuration.getOptional[String]("app.organization.email")
   val gitHubOauthScopesForStatus = Seq("repo") // todo: there isn't an oauth scope that allows read-only access to private repos in other accounts
 
@@ -60,9 +57,19 @@ class Application @Inject()
     }
   }
 
+  def gitHubAppOauthCallback(code: String, state: String) = Action.async { request =>
+    gitHub.accessToken(code, gitHub.integrationClientId, gitHub.integrationClientSecret).map { accessToken =>
+      val encAccessToken = crypto.encryptAES(accessToken)
+      Redirect(state).flashing("encAccessToken" -> encAccessToken)
+    } recover {
+      case e: utils.UnauthorizedError => Redirect(state).flashing("error" -> e.getMessage)
+      case e: Exception => InternalServerError(e.getMessage)
+    }
+  }
+
   // state is used for the URL to redirect to
   def gitHubOauthCallback(code: String, state: String) = Action.async { request =>
-    gitHub.accessToken(code).map { accessToken =>
+    gitHub.accessToken(code, gitHub.clientId, gitHub.clientSecret).map { accessToken =>
       val encAccessToken = crypto.encryptAES(accessToken)
       Redirect(state).flashing("encAccessToken" -> encAccessToken)
     } recover {
@@ -284,17 +291,27 @@ class Application @Inject()
   def audit = Action.async { implicit request =>
     getGitHubAuthInfo(request).flatMap { maybeGitHubAuthInfo =>
       maybeGitHubAuthInfo.fold {
-        Future.successful(Redirect(gitHubAuthUrl(gitHubOauthScopesForAudit, routes.Application.audit().absoluteURL())))
+        Future.successful(Redirect(gitHubAppAuthUrl(routes.Application.audit().absoluteURL())))
       } { gitHubAuthInfo =>
         val userAccessToken = crypto.decryptAES(gitHubAuthInfo.encAuthToken)
 
-        gitHub.integrationAndUserOrgs(userAccessToken).map { orgs =>
-          val orgsWithEncAccessToken = orgs.mapValues(crypto.encryptAES)
-          Ok(auditView(orgsWithEncAccessToken, gitHub.integrationSlug, gitHub.clientId))
-        } recover {
-          case e: IncorrectResponseStatus =>
-            // user likely didn't have the right scope
-            Ok(auditError(gitHub.clientId, e.message, gitHubAuthUrl(gitHubOauthScopesForAudit, routes.Application.audit().absoluteURL())))
+        gitHub.integrationInstallations(userAccessToken).flatMap { installations =>
+          val ids = installations.value.map(_.\("id").as[Int])
+
+          val repoFutures = ids.map { id =>
+            gitHub.installationRepositories(id, userAccessToken)
+          }.toList
+
+          Future.foldLeft(repoFutures)(JsArray.empty)(_ ++ _).map { repos =>
+            val orgRepos = repos.value.map { repoJson =>
+              val org = (repoJson \ "owner" \ "login").as[String]
+              val repo = repoJson.as[GitHub.Repo]
+
+              org -> repo
+            }.groupBy(_._1).mapValues(_.map(_._2))
+
+            Ok(auditView(orgRepos, gitHub.integrationSlug, gitHubAuthInfo.encAuthToken))
+          }
         }
       }
     }
@@ -306,7 +323,7 @@ class Application @Inject()
     val collaboratorsFuture = gitHub.collaborators(ownerRepo, accessToken)
     val allContributorsFuture = gitHub.repoContributors(ownerRepo, accessToken)
 
-    for {
+    val future = for {
       collaborators <- collaboratorsFuture
       allContributors <- allContributorsFuture
       externalContributors = gitHub.externalContributors(allContributors.map(_.contributor), collaborators)
@@ -329,16 +346,14 @@ class Application @Inject()
         collaborators.contains(contributorWithMetrics.contributor)
       }
 
-      Ok(views.html.auditRepo(externalContributorsWithClas, internalContributors))
+      (externalContributorsWithClas, internalContributors)
     }
-  }
 
-  def auditRepos(org: String, encAccessToken: String) = Action.async { implicit request =>
-    val accessToken = crypto.decryptAES(encAccessToken)
-
-    gitHub.orgRepos(org, accessToken).map { jsArray =>
-      val repos = jsArray.as[Seq[GitHub.Repo]]
-      Ok(auditReposView(org, repos, encAccessToken))
+    future.map { case (externalContributorsWithClas, internalContributors) =>
+      Ok(views.html.auditRepo(externalContributorsWithClas, internalContributors))
+    } recover {
+      case irs: GitHub.IncorrectResponseStatus => InternalServerError(irs.message)
+      case e: Exception => InternalServerError(e.getMessage)
     }
   }
 
@@ -406,11 +421,21 @@ class Application @Inject()
     } yield validation
   }
 
+  private def gitHubAppAuthUrl(state: String)(implicit request: RequestHeader): String = {
+    val query = Query("client_id" -> gitHub.integrationClientId, "redirect_uri" -> redirectAppUri, "state" -> state)
+    val uri = Uri("https://gitHub.com/login/oauth/authorize")
+    uri.withQuery(query).toString()
+  }
+
   private def gitHubAuthUrl(scopes: Seq[String], state: String)(implicit request: RequestHeader): String = {
     val query = Query("client_id" -> gitHub.clientId, "redirect_uri" -> redirectUri, "scope" -> scopes.mkString(" "), "state" -> state)
     val uri = Uri("https://gitHub.com/login/oauth/authorize")
 
     uri.withQuery(query).toString()
+  }
+
+  private def redirectAppUri(implicit request: RequestHeader): String = {
+    routes.Application.gitHubAppOauthCallback("", "").absoluteURL(request.secure).stripSuffix("?code=&state=")
   }
 
   private def redirectUri(implicit request: RequestHeader): String = {

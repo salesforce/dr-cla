@@ -14,13 +14,13 @@ POST        /webhook-integration                    controllers.Application.webh
 GET         /status/:org/:repo/pull/:prNum          controllers.Application.status(org: String, repo: String, prNum: Int)
 
 GET         /audit                                  controllers.Application.audit
-GET         /audit/repos                            controllers.Application.auditRepos(org: String, encAccessToken: String)
 GET         /audit/contributors                     controllers.Application.auditContributors(org: String, ownerRepo: String, encAccessToken: String)
 
 GET         /.well-known/acme-challenge/:key        controllers.Application.wellKnown(key)
 
 # OAuth
 GET         /_github_oauth_callback                 controllers.Application.gitHubOauthCallback(code: String, state: String)
+GET         /_github_app_oauth_callback             controllers.Application.gitHubAppOauthCallback(code: String, state: String)
 
 
 # Map static resources from the /public folder to the /assets URL path

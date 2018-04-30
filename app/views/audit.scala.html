@@ -7,16 +7,16 @@
 
 @import helpers.ViewHelpers
 
-@this(main: main, webJarsUtil: org.webjars.play.WebJarsUtil, viewHelpers: ViewHelpers)
+@this(main: main, webJarsUtil: org.webjars.play.WebJarsUtil, viewHelpers: ViewHelpers, auditReposView: auditRepos)
 
-@(orgs: Map[String, String], integrationSlug: String, oAuthClientId: String)
+@(orgs: scala.collection.immutable.Map[String, Seq[_root_.utils.GitHub.Repo]], integrationSlug: String, encAccessToken: String)
 
 @main("CLA Audit") {
 
     <h2 class="slds-text-heading--large" style="margin-bottom: 20px;">CLA Audit</h2>
 
     <h2 class="slds-text-heading--medium" style="text-align: left; padding-left: 0.5rem;">Orgs You Can Audit:</h2>
-    @orgs.map { case (org, encAccessToken) =>
+    @orgs.map { case (org, repos) =>
         <ul class="slds-has-dividers_bottom-space" style="padding-left: 0.5rem">
             <li>
                 <div class="slds-tile">
@@ -24,12 +24,7 @@
                     <div class="slds-tile__detail slds-text-body--small">
                         <ul class="slds-tile__detail slds-list--vertical slds-text-body--small">
                             <li class="slds-truncate slds-list__item nohover">
-                                <div data-href="@routes.Application.auditRepos(org, encAccessToken)" data-autoload="false">
-                                    <button class="slds-button slds-button--brand">
-                                        Load Repos
-                                        @webJarsUtil.locate("slds_spinner.gif").img(Map("alt" -> "Loading...", "class" -> "slds-button__icon slds-button__icon--right", "style" -> "height: 1rem; display: none;"))
-                                    </button>
-                                </div>
+                                @auditReposView(org, repos, encAccessToken)
                             </li>
                         </ul>
                     </div>
@@ -42,8 +37,6 @@
         To see a GitHub Org here:
         <ol class="slds-list--ordered">
             <li><a href="https://github.com/integration/@integrationSlug">Install the @viewHelpers.organizationName CLA Integration</a> into the org</li>
-            <li>Make sure you are an admin on the org</li>
-            <li>Make sure the <a href="https://github.com/settings/connections/applications/@oAuthClientId">@viewHelpers.organizationName CLA application</a> has access to the org</li>
         </ol>
     </div>
 
