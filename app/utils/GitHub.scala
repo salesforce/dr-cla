@@ -124,12 +124,17 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     }
 
     def req(path: String, accessToken: String, page: Int, pageSize: Int): Future[WSResponse] = {
-      ws(path, accessToken).withQueryStringParameters("page" -> page.toString, "per_page" -> pageSize.toString).get()
+      ws(path, accessToken).withQueryStringParameters("page" -> page.toString, "per_page" -> pageSize.toString).get().flatMap { response =>
+        response.status match {
+          case Status.OK => Future.successful(response)
+          case _ => Future.failed(new Exception(response.body))
+        }
+      }
     }
 
     // get the first page
     req(path, accessToken, 1, pageSize).flatMap { response =>
-      val firstPageRepos = extractor(response.json)
+      val firstPage = extractor(response.json)
 
       def urlToPage(urlString: String): Int = {
         val url = new URL(urlString)
@@ -147,7 +152,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
       val pagesFutures = pages.map(req(path, accessToken, _, pageSize).map(response => extractor(response.json)))
 
       // assume numeric paging so we can parallelize
-      Future.foldLeft(pagesFutures)(firstPageRepos)(_ ++ _)
+      Future.foldLeft(pagesFutures)(firstPage)(_ ++ _)
     }
   }
 
