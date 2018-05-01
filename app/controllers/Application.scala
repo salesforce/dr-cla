@@ -312,6 +312,13 @@ class Application @Inject()
 
             Ok(auditView(orgRepos, gitHub.integrationSlug, gitHubAuthInfo.encAuthToken))
           }
+        } recover {
+          case irs: GitHub.IncorrectResponseStatus =>
+            Logger.error("Audit Error", irs)
+            InternalServerError(irs.message)
+          case e: Exception =>
+            Logger.error("Audit Error", e)
+            InternalServerError(e.getMessage)
         }
       }
     }
@@ -352,8 +359,12 @@ class Application @Inject()
     future.map { case (externalContributorsWithClas, internalContributors) =>
       Ok(views.html.auditRepo(externalContributorsWithClas, internalContributors))
     } recover {
-      case irs: GitHub.IncorrectResponseStatus => InternalServerError(irs.message)
-      case e: Exception => InternalServerError(e.getMessage)
+      case irs: GitHub.IncorrectResponseStatus =>
+        Logger.error("Audit Error", irs)
+        InternalServerError(irs.message)
+      case e: Exception =>
+        Logger.error("Audit Error", e)
+        InternalServerError(e.getMessage)
     }
   }
 

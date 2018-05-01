@@ -8,11 +8,11 @@
 package utils
 
 import java.io.StringReader
-import java.net.URL
+import java.net.{URI, URL}
 import java.security.KeyPair
 import java.util.Locale
-import javax.inject.Inject
 
+import javax.inject.Inject
 import models.ClaSignature
 import org.apache.commons.codec.binary.Base64
 import org.bouncycastle.openssl.jcajce.JcaPEMKeyConverter
@@ -822,7 +822,8 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
       } (Future.successful)
     } else {
       val messageTry = Try((response.json \ "message").as[String])
-      Future.failed(GitHub.IncorrectResponseStatus(statusCode, response.status, messageTry.getOrElse(response.body)))
+      val ahcResponse = response.underlying[play.shaded.ahc.org.asynchttpclient.Response]
+      Future.failed(GitHub.IncorrectResponseStatus(statusCode, response.status, ahcResponse.getUri.toJavaNetURI, messageTry.getOrElse(response.body)))
     }
   }
 
@@ -831,7 +832,8 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
       Future.successful(response)
     } else {
       val messageTry = Try((response.json \ "message").as[String])
-      Future.failed(GitHub.IncorrectResponseStatus(statusCode, response.status, messageTry.getOrElse(response.body)))
+      val ahcResponse = response.underlying[play.shaded.ahc.org.asynchttpclient.Response]
+      Future.failed(GitHub.IncorrectResponseStatus(statusCode, response.status, ahcResponse.getUri.toJavaNetURI, messageTry.getOrElse(response.body)))
     }
   }
 
@@ -852,8 +854,8 @@ object GitHub {
     implicit val jsonWrites: Writes[Org] = Json.writes[Org]
   }
 
-  case class IncorrectResponseStatus(expectedStatusCode: Int, actualStatusCode: Int, message: String) extends Exception {
-    override def getMessage: String = s"Expected status code $expectedStatusCode but got $actualStatusCode - $message"
+  case class IncorrectResponseStatus(expectedStatusCode: Int, actualStatusCode: Int, uri: URI, message: String) extends Exception {
+    override def getMessage: String = s"$uri - Expected status code $expectedStatusCode but got $actualStatusCode - $message"
   }
 
   case class InvalidResponseBody(body: String) extends Exception {
