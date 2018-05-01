@@ -1,5 +1,5 @@
 {
-  "name": "Salesforce CLA",
+  "name": "DR CLA",
   "env": {
     "APPLICATION_SECRET": {
       "generator": "secret"
@@ -18,6 +18,12 @@
     },
     "GITHUB_INTEGRATION_SLUG": {
       "description": "GitHub Integration Slug"
+    },
+    "GITHUB_INTEGRATION_CLIENT_ID": {
+      "description": "GitHub Integration OAuth Client ID"
+    },
+    "GITHUB_INTEGRATION_CLIENT_SECRET": {
+      "description": "GitHub Integration OAuth Client Secret"
     },
     "GITHUB_INTEGRATION_PRIVATE_KEY": {
       "description": "GitHub Integration Private Key"

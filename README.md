@@ -48,6 +48,7 @@ Local Dev Setup
     - Once finished, set the `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` env vars accordingly
 1. [Setup a new GitHub App](https://github.com/settings/apps) with the following settings:
     - *Webhook URL* = `https://YOUR_NGROK_ID.ngrok.io/webhook-integration`
+    - *User authorization callback URL* = `https://YOUR_NGROK_ID.ngrok.io/_github_app_oauth_callback`
     - *Repository administration* = `Read-only`
     - *Commit statuses* = `Read & Write`
     - *Issues* = `Read & Write`
