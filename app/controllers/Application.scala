@@ -295,11 +295,13 @@ class Application @Inject()
       } { gitHubAuthInfo =>
         val userAccessToken = crypto.decryptAES(gitHubAuthInfo.encAuthToken)
 
-        gitHub.integrationInstallations(userAccessToken).flatMap { installations =>
+        gitHub.userInstallations(userAccessToken).flatMap { installations =>
           val ids = installations.value.map(_.\("id").as[Int])
 
           val repoFutures = ids.map { id =>
-            gitHub.installationRepositories(id, userAccessToken)
+            gitHub.installationRepositories(id, userAccessToken).recover {
+              case irs: GitHub.IncorrectResponseStatus => JsArray.empty
+            }
           }.toList
 
           Future.foldLeft(repoFutures)(JsArray.empty)(_ ++ _).map { repos =>

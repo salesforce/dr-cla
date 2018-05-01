@@ -445,11 +445,10 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
 
   def integrationInstallations(): Future[JsArray] = {
     val (ws, _) = jwtWs("integration/installations")
-
     ws.get().flatMap(okT[JsArray])
   }
 
-  def integrationInstallations(accessToken: String): Future[JsArray] = {
+  def userInstallations(accessToken: String): Future[JsArray] = {
     fetchPagesWithExtractor(s"user/installations", accessToken)(_.\("installations").as[JsArray])
   }
 
