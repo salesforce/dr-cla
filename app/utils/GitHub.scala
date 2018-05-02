@@ -26,6 +26,8 @@ import play.api.libs.json.Reads._
 import play.api.libs.json._
 import play.api.libs.functional.syntax._
 import play.api.libs.ws.{WSClient, WSRequest, WSResponse}
+import play.api.mvc.QueryStringBindable.Parsing
+import play.api.mvc.{PathBindable, QueryStringBindable}
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.language.implicitConversions
@@ -207,13 +209,13 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     }
   }
 
-  def getPullRequest(ownerRepo: String, pullRequestNum: Int, accessToken: String): Future[JsValue] = {
+  def getPullRequest(ownerRepo: OwnerRepo, pullRequestNum: Int, accessToken: String): Future[JsValue] = {
     val path = s"repos/$ownerRepo/pulls/$pullRequestNum"
     ws(path, accessToken).get().flatMap(okT[JsValue])
   }
 
   // todo: paging
-  def pullRequests(ownerRepo: String, accessToken: String, filterState: Option[String] = None): Future[JsArray] = {
+  def pullRequests(ownerRepo: OwnerRepo, accessToken: String, filterState: Option[String] = None): Future[JsArray] = {
     val path = s"repos/$ownerRepo/pulls"
     val params = filterState.fold(Map.empty[String, String])(state => Map("state" -> state)).toSeq
     ws(path, accessToken).withQueryStringParameters(params:_*).get().flatMap { response =>
@@ -225,7 +227,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     }
   }
 
-  def createStatus(ownerRepo: String, sha: String, state: String, url: String, description: String, context: String, accessToken: String): Future[JsObject] = {
+  def createStatus(ownerRepo: OwnerRepo, sha: String, state: String, url: String, description: String, context: String, accessToken: String): Future[JsObject] = {
     val path = s"repos/$ownerRepo/statuses/$sha"
 
     val json = Json.obj(
@@ -238,13 +240,13 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     ws(path, accessToken).post(json).flatMap(createdT[JsObject])
   }
 
-  def pullRequestCommits(ownerRepo: String, pullRequestNum: Int, accessToken: String): Future[JsArray] = {
+  def pullRequestCommits(ownerRepo: OwnerRepo, pullRequestNum: Int, accessToken: String): Future[JsArray] = {
     val path = s"repos/$ownerRepo/pulls/$pullRequestNum/commits"
 
     ws(path, accessToken).get().flatMap(okT[JsArray])
   }
 
-  def collaborators(ownerRepo: String, accessToken: String): Future[Set[Contributor]] = {
+  def collaborators(ownerRepo: OwnerRepo, accessToken: String): Future[Set[Contributor]] = {
     val path = s"repos/$ownerRepo/collaborators"
 
     fetchPages(path, accessToken).map { collaborators =>
@@ -254,7 +256,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     }
   }
 
-  def commentOnIssue(ownerRepo: String, issueNumber: Int, body: String, accessToken: String): Future[JsValue] = {
+  def commentOnIssue(ownerRepo: OwnerRepo, issueNumber: Int, body: String, accessToken: String): Future[JsValue] = {
     // /
     val path = s"repos/$ownerRepo/issues/$issueNumber/comments"
     val json = Json.obj(
@@ -263,17 +265,17 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     ws(path, accessToken).post(json).flatMap(created)
   }
 
-  def commitStatus(ownerRepo: String, ref: String, accessToken: String): Future[JsValue] = {
+  def commitStatus(ownerRepo: OwnerRepo, ref: String, accessToken: String): Future[JsValue] = {
     val path = s"repos/$ownerRepo/commits/$ref/status"
     ws(path, accessToken).get().flatMap(okT[JsValue])
   }
 
-  def issueComments(ownerRepo: String, issueNumber: Int, accessToken: String): Future[JsArray] = {
+  def issueComments(ownerRepo: OwnerRepo, issueNumber: Int, accessToken: String): Future[JsArray] = {
     val path = s"repos/$ownerRepo/issues/$issueNumber/comments"
     ws(path, accessToken).get().flatMap(okT[JsArray])
   }
 
-  def updateLabel(ownerRepo: String, name: String, color: String, accessToken: String): Future[JsValue] = {
+  def updateLabel(ownerRepo: OwnerRepo, name: String, color: String, accessToken: String): Future[JsValue] = {
     val path = s"repos/$ownerRepo/labels/$name"
 
     val json = Json.obj(
@@ -283,12 +285,12 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     ws(path, accessToken).patch(json).flatMap(okT[JsValue])
   }
 
-  def getIssueLabels(ownerRepo: String, issueNumber: Int, accessToken: String): Future[JsArray] = {
+  def getIssueLabels(ownerRepo: OwnerRepo, issueNumber: Int, accessToken: String): Future[JsArray] = {
     val path = s"repos/$ownerRepo/issues/$issueNumber/labels"
     ws(path, accessToken).get().flatMap(okT[JsArray])
   }
 
-  def applyLabel(ownerRepo: String, name: String, issueNumber: Int, accessToken: String): Future[JsArray] = {
+  def applyLabel(ownerRepo: OwnerRepo, name: String, issueNumber: Int, accessToken: String): Future[JsArray] = {
     val path = s"repos/$ownerRepo/issues/$issueNumber/labels"
     val json =  Json.arr(name)
     ws(path, accessToken).post(json).flatMap(okT[JsArray]).flatMap { jsArray =>
@@ -309,13 +311,13 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   // https://developer.github.com/v3/issues/labels/#remove-a-label-from-an-issue
   // Supposed to return Status: 204 No Content
   // but actually returns 200 : OK
-  def removeLabel(ownerRepo: String, name: String, issueNumber: Int, accessToken: String): Future[Unit] = {
+  def removeLabel(ownerRepo: OwnerRepo, name: String, issueNumber: Int, accessToken: String): Future[Unit] = {
     val path = s"repos/$ownerRepo/issues/$issueNumber/labels/$name"
     ws(path, accessToken).delete().flatMap(ok).map(_ => Unit)
   }
 
   // todo: do not re-apply an existing label
-  def toggleLabel(ownerRepo: String, newLabel: String, oldLabel: String, issueNumber: Int, accessToken: String): Future[Option[JsValue]] = {
+  def toggleLabel(ownerRepo: OwnerRepo, newLabel: String, oldLabel: String, issueNumber: Int, accessToken: String): Future[Option[JsValue]] = {
     getIssueLabels(ownerRepo, issueNumber, accessToken).flatMap { json =>
       val issueLabels = json.value.map(_.\("name").as[String])
 
@@ -383,7 +385,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     ws(path, accessToken).patch(json).flatMap(okT[JsObject])
   }
 
-  def commit(ownerRepo: String, message: String, tree: String, parents: Set[String], maybeAuthor: Option[(String, String)], accessToken: String): Future[JsObject] = {
+  def commit(ownerRepo: OwnerRepo, message: String, tree: String, parents: Set[String], maybeAuthor: Option[(String, String)], accessToken: String): Future[JsObject] = {
     val path = s"repos/$ownerRepo/git/commits"
 
     val json = Json.obj(
@@ -401,12 +403,12 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     ws(path, accessToken).post(json).flatMap(createdT[JsObject])
   }
 
-  def repoCommit(ownerRepo: String, sha: String, accessToken: String): Future[JsObject] = {
+  def repoCommit(ownerRepo: OwnerRepo, sha: String, accessToken: String): Future[JsObject] = {
     val path = s"repos/$ownerRepo/commits/$sha"
     ws(path, accessToken).get().flatMap(okT[JsObject])
   }
 
-  def updateGitRef(ownerRepo: String, sha: String, ref: String, accessToken: String): Future[JsObject] = {
+  def updateGitRef(ownerRepo: OwnerRepo, sha: String, ref: String, accessToken: String): Future[JsObject] = {
     val path = s"repos/$ownerRepo/git/refs/$ref"
     val json = Json.obj(
       "sha" -> sha
@@ -415,13 +417,13 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     ws(path, accessToken).patch(json).flatMap(okT[JsObject])
   }
 
-  def repoCommits(ownerRepo: String, accessToken: String): Future[JsArray] = {
+  def repoCommits(ownerRepo: OwnerRepo, accessToken: String): Future[JsArray] = {
     val path = s"repos/$ownerRepo/commits"
     fetchPages(path, accessToken)
   }
 
   def pullRequestWithCommitsAndStatus(accessToken:String)(pullRequest: JsValue): Future[JsObject] = {
-    val ownerRepo = (pullRequest \ "base" \ "repo" \ "full_name").as[String]
+    val ownerRepo = (pullRequest \ "base" \ "repo").as[OwnerRepo]
     val prId = (pullRequest \ "number").as[Int]
     val ref = (pullRequest \ "head" \ "sha").as[String]
     val commitsFuture = pullRequestCommits(ownerRepo, prId, accessToken)
@@ -471,25 +473,25 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     ws(path, accessToken).post(json).flatMap(createdT[JsObject])
   }
 
-  def repo(ownerRepo: String)(accessToken: String): Future[JsObject] = {
+  def repo(ownerRepo: OwnerRepo)(accessToken: String): Future[JsObject] = {
     ws(s"repos/$ownerRepo", accessToken).get().flatMap(okT[JsObject])
   }
 
-  def deleteRepo(ownerRepo: String)(accessToken: String): Future[Unit] = {
+  def deleteRepo(ownerRepo: OwnerRepo)(accessToken: String): Future[Unit] = {
     ws(s"repos/$ownerRepo", accessToken).delete().flatMap(nocontent).map(_ => Unit)
   }
 
-  def forkRepo(ownerRepo: String)(accessToken: String): Future[JsObject] = {
+  def forkRepo(ownerRepo: OwnerRepo)(accessToken: String): Future[JsObject] = {
     ws(s"repos/$ownerRepo/forks", accessToken).execute(HttpVerbs.POST).flatMap(statusT[JsObject](Status.ACCEPTED, _))
   }
 
-  def getFile(ownerRepo: String, path: String, maybeRef: Option[String] = None)(accessToken: String): Future[JsObject] = {
+  def getFile(ownerRepo: OwnerRepo, path: String, maybeRef: Option[String] = None)(accessToken: String): Future[JsObject] = {
     val queryString = maybeRef.fold(Map.empty[String, String])(ref => Map("ref" -> ref)).toSeq
 
     ws(s"repos/$ownerRepo/contents/$path", accessToken).withQueryStringParameters(queryString:_*).get().flatMap(okT[JsObject])
   }
 
-  def editFile(ownerRepo: String, path: String, contents: String, commitMessage: String, sha: String, maybeBranch: Option[String] = None)(accessToken: String): Future[JsObject] = {
+  def editFile(ownerRepo: OwnerRepo, path: String, contents: String, commitMessage: String, sha: String, maybeBranch: Option[String] = None)(accessToken: String): Future[JsObject] = {
     val json = Json.obj(
       "path" -> path,
       "message" -> commitMessage,
@@ -504,7 +506,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     ws(s"repos/$ownerRepo/contents/$path", accessToken).put(jsonWithMaybeBranch).flatMap(okT[JsObject])
   }
 
-  def createPullRequest(ownerRepo: String, title: String, head: String, base: String, accessToken: String): Future[JsObject] = {
+  def createPullRequest(ownerRepo: OwnerRepo, title: String, head: String, base: String, accessToken: String): Future[JsObject] = {
     val json = Json.obj(
       "title" -> title,
       "head" -> head,
@@ -514,16 +516,16 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     ws(s"repos/$ownerRepo/pulls", accessToken).post(json).flatMap(createdT[JsObject])
   }
 
-  def closePullRequest(ownerRepo: String, number: Int, accessToken: String): Future[JsObject] = {
+  def closePullRequest(ownerRepo: OwnerRepo, number: Int, accessToken: String): Future[JsObject] = {
     val json = Json.obj("state" -> "closed")
     ws(s"repos/$ownerRepo/pulls/$number", accessToken).patch(json).flatMap(okT[JsObject])
   }
 
-  def addCollaborator(ownerRepo: String, username: String, accessToken: String): Future[Unit] = {
+  def addCollaborator(ownerRepo: OwnerRepo, username: String, accessToken: String): Future[Unit] = {
     ws(s"repos/$ownerRepo/collaborators/$username", accessToken).execute(HttpVerbs.PUT).flatMap(nocontent).map(_ => Unit)
   }
 
-  def createBranch(ownerRepo: String, name: String, sha: String, accessToken: String): Future[JsObject] = {
+  def createBranch(ownerRepo: OwnerRepo, name: String, sha: String, accessToken: String): Future[JsObject] = {
     val json = Json.obj(
       "ref" -> s"refs/heads/$name",
       "sha" -> sha
@@ -557,7 +559,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
 
   // todo: optimize this
   private def pullRequestsNeedingValidationForAccessToken(signerGitHubId: String, repos: Seq[JsObject], accessToken: String): Future[Map[JsObject, String]] = {
-    val repoNames = repos.map(_.\("full_name").as[String]).toSet
+    val repoNames = repos.map(_.as[OwnerRepo]).toSet
 
     for {
       allPullRequests <- Future.sequence(repoNames.map(ownerRepo => pullRequests(ownerRepo, accessToken, Some("open"))))
@@ -592,7 +594,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     } yield pullRequests.flatten.toMap
   }
 
-  def pullRequestUserCommitters(ownerRepo: String, prNumber: Int, sha: String, accessToken: String): Future[Set[Contributor]] = {
+  def pullRequestUserCommitters(ownerRepo: OwnerRepo, prNumber: Int, sha: String, accessToken: String): Future[Set[Contributor]] = {
     val prCommitsFuture = pullRequestCommits(ownerRepo, prNumber, accessToken)
 
     prCommitsFuture.map { commits =>
@@ -616,7 +618,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     }
   }
 
-  def repoContributors(ownerRepo: String, accessToken: String): Future[Set[ContributorWithMetrics]] = {
+  def repoContributors(ownerRepo: OwnerRepo, accessToken: String): Future[Set[ContributorWithMetrics]] = {
     for {
       commits <- repoCommits(ownerRepo, accessToken)
     } yield {
@@ -636,7 +638,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     contributors.diff(internalContributors)
   }
 
-  def externalContributorsForPullRequest(ownerRepo: String, prNumber: Int, sha: String, accessToken: String): Future[Set[Contributor]] = {
+  def externalContributorsForPullRequest(ownerRepo: OwnerRepo, prNumber: Int, sha: String, accessToken: String): Future[Set[Contributor]] = {
     val pullRequestCommittersFuture = pullRequestUserCommitters(ownerRepo, prNumber, sha, accessToken)
     val collaboratorsFuture = collaborators(ownerRepo, accessToken)
 
@@ -656,7 +658,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     }
   }
 
-  def missingClaComment(ownerRepo: String, prNumber: Int, sha: String, claUrl: String, gitHubUsers: Set[GitHubUser], accessToken: String): Future[Option[JsValue]] = {
+  def missingClaComment(ownerRepo: OwnerRepo, prNumber: Int, sha: String, claUrl: String, gitHubUsers: Set[GitHubUser], accessToken: String): Future[Option[JsValue]] = {
     if (gitHubUsers.nonEmpty) {
       issueComments(ownerRepo, prNumber, accessToken).flatMap { comments =>
         val message = messagesApi("cla.missing", gitHubUsers.map(_.username).mkString("@", " @", ""), orgName,  claUrl)
@@ -675,7 +677,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     }
   }
 
-  def authorLoginNotFoundComment(ownerRepo: String, prNumber: Int, claUrl: String, unknownCommitters: Set[UnknownCommitter], accessToken: String): Future[Option[JsValue]] = {
+  def authorLoginNotFoundComment(ownerRepo: OwnerRepo, prNumber: Int, claUrl: String, unknownCommitters: Set[UnknownCommitter], accessToken: String): Future[Option[JsValue]] = {
     if (unknownCommitters.nonEmpty) {
       val committers = unknownCommitters.flatMap(_.toStringOpt())
 
@@ -703,7 +705,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     }
   }
 
-  def updatePullRequestLabel(ownerRepo: String, prNumber: Int, hasExternalContributors: Boolean, hasMissingClas: Boolean, accessToken: String): Future[Option[JsValue]] = {
+  def updatePullRequestLabel(ownerRepo: OwnerRepo, prNumber: Int, hasExternalContributors: Boolean, hasMissingClas: Boolean, accessToken: String): Future[Option[JsValue]] = {
     if (hasExternalContributors) {
       if (hasMissingClas) {
         toggleLabel(ownerRepo, "cla:missing", "cla:signed", prNumber, accessToken)
@@ -717,18 +719,13 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     }
   }
 
-  def validatePullRequest(pullRequest: JsObject, token: String, claUrl: String, statusUrlF: (String, String, Int) => String)(clasForCommitters: (Set[Contributor]) => Future[Set[ClaSignature]]): Future[(Set[Contributor], Set[Contributor], JsObject)] = {
-    val owner = (pullRequest \ "pull_request" \ "base" \ "repo" \ "owner" \ "login").as[String]
-    val repo = (pullRequest \ "pull_request" \ "base" \ "repo" \ "name").as[String]
-    val ownerRepo = (pullRequest \ "pull_request" \ "base" \ "repo" \ "full_name").as[String]
-    val prNumber = (pullRequest \ "pull_request" \ "number").as[Int]
+  def validatePullRequest(pullRequest: JsObject, token: String, claUrl: String, statusUrl: String)(clasForCommitters: Set[Contributor] => Future[Set[ClaSignature]]): Future[ValidationResult] = {
+    val (repo, prNumber) = pullRequestInfo(pullRequest)
     val sha = (pullRequest \ "pull_request" \ "head" \ "sha").as[String]
 
-    val statusUrl = statusUrlF(owner, repo, prNumber)
-
     def addComment(gitHubUsers: Set[GitHubUser], unknownCommitters: Set[UnknownCommitter]): Future[(Option[JsValue], Option[JsValue])] = {
-      val gitHubUsersCommentFuture = missingClaComment(ownerRepo, prNumber, sha, claUrl, gitHubUsers, token)
-      val unknownCommittersCommentFuture = authorLoginNotFoundComment(ownerRepo, prNumber, claUrl, unknownCommitters, token)
+      val gitHubUsersCommentFuture = missingClaComment(repo, prNumber, sha, claUrl, gitHubUsers, token)
+      val unknownCommittersCommentFuture = authorLoginNotFoundComment(repo, prNumber, claUrl, unknownCommitters, token)
 
       for {
         gitHubUsersComment <- gitHubUsersCommentFuture
@@ -747,42 +744,43 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
           ("error", "Commit authors must be associated with GitHub users")
       }
 
-      createStatus(ownerRepo, sha, state, statusUrl, description, gitHubBotName, token)
+      createStatus(repo, sha, state, statusUrl, description, gitHubBotName, token)
     }
 
     for {
-      _ <- createStatus(ownerRepo, sha, "pending", statusUrl, "The CLA verifier is running", gitHubBotName, token)
-      externalContributors <- externalContributorsForPullRequest(ownerRepo, prNumber, sha, token)
+      _ <- createStatus(repo, sha, "pending", statusUrl, "The CLA verifier is running", gitHubBotName, token)
+      externalContributors <- externalContributorsForPullRequest(repo, prNumber, sha, token)
       committersWithoutClas <- committersWithoutClas(externalContributors)(clasForCommitters)
       gitHubUsers = committersWithoutClas.collect { case gitHubUser: GitHubUser => gitHubUser }
       unknownCommitters = committersWithoutClas.collect { case unknownCommitter: UnknownCommitter => unknownCommitter }
-      _ <- updatePullRequestLabel(ownerRepo, prNumber, externalContributors.nonEmpty, committersWithoutClas.nonEmpty, token)
+      _ <- updatePullRequestLabel(repo, prNumber, externalContributors.nonEmpty, committersWithoutClas.nonEmpty, token)
       _ <- addComment(gitHubUsers, unknownCommitters)
       status <- updateStatus(gitHubUsers, unknownCommitters)
     } yield (externalContributors, committersWithoutClas, status)
   }
 
-  def validatePullRequests(pullRequests: Map[JsObject, String], claUrl: String, statusUrlF: (String, String, Int) => String)(clasForCommitters: (Set[Contributor]) => Future[Set[ClaSignature]]): Future[Iterable[(Set[Contributor], Set[Contributor], JsObject)]] = {
+  def validatePullRequests(pullRequests: Map[JsObject, String], claUrlF: (OwnerRepo, Int) => String, statusUrlF: (OwnerRepo, Int) => String)(clasForCommitters: Set[Contributor] => Future[Set[ClaSignature]]): Future[Iterable[ValidationResult]] = {
     Future.sequence {
       pullRequests.map { case (pullRequest, token) =>
-        validatePullRequest(pullRequest, token, claUrl, statusUrlF)(clasForCommitters)
+        val (ownerRepo, prNum) = pullRequestInfo(pullRequest)
+        validatePullRequest(pullRequest, token, claUrlF(ownerRepo, prNum), statusUrlF(ownerRepo, prNum))(clasForCommitters)
       }
     }
   }
 
-  def orgsWithRole(roles: Seq[String])(jsArray: JsArray): Seq[GitHub.Org] = {
-    jsArray.value.filter(org => roles.contains(org.\("role").as[String])).map(_.as[GitHub.Org])
+  def orgsWithRole(roles: Seq[String])(jsArray: JsArray): Seq[GitHub.Owner] = {
+    jsArray.value.filter(org => roles.contains(org.\("role").as[String])).map(_.as[GitHub.Owner])
   }
 
-  def isOrgAdmin(org: String, accessToken: String): Future[Boolean] = {
+  def isOrgAdmin(owner: GitHub.Owner, accessToken: String): Future[Boolean] = {
     userMembershipOrgs(Some("active"), accessToken).map { jsArray =>
       val orgs = orgsWithRole(Seq("admin"))(jsArray)
-      orgs.exists(_.login == org)
+      orgs.contains(owner)
     }
   }
 
   def integrationAndUserOrgs(userAccessToken: String): Future[Map[String, String]] = {
-    def orgIntegrationInstallationForUser(userOrgs: Seq[GitHub.Org])(integrationInstallation: JsValue): Boolean = {
+    def orgIntegrationInstallationForUser(userOrgs: Seq[GitHub.Owner])(integrationInstallation: JsValue): Boolean = {
       val isOrg = (integrationInstallation \ "account" \ "type").as[String] == "Organization"
       val userHasAccess = userOrgs.exists(_.login == (integrationInstallation \ "account" \ "login").as[String])
       isOrg && userHasAccess
@@ -840,18 +838,57 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
 
 object GitHub {
 
-  case class Repo(ownerRepo: String)
+  type ValidationResult = (Set[GitHub.Contributor], Set[GitHub.Contributor], JsObject)
 
-  object Repo {
-    implicit val jsonReads: Reads[Repo] = (__ \ "full_name").read[String].map(Repo(_))
+  case class OwnerRepo(ownerRepo: String) {
+    assert(ownerRepo.split("/").length == 2)
+    lazy val owner = Owner(ownerRepo.split("/").head)
+    lazy val repo = Repo(ownerRepo.split("/").last)
+    override def toString: String = ownerRepo
   }
 
-  case class Org(login: String)
+  object OwnerRepo {
+    implicit val jsonReads: Reads[OwnerRepo] = (__ \ "full_name").read[String].map(OwnerRepo(_))
 
-  object Org {
-    implicit val jsonReads: Reads[Org] = (__ \ "organization" \ "login").read[String].map(Org(_))
-    implicit val jsonWrites: Writes[Org] = Json.writes[Org]
+    implicit val queryStringBindable: QueryStringBindable[OwnerRepo] = {
+      QueryStringBindable.bindableString.transform(OwnerRepo(_), _.toString)
+    }
+
+    implicit val pathBindable: PathBindable[OwnerRepo] = {
+      PathBindable.bindableString.transform(OwnerRepo(_), _.toString)
+    }
   }
+
+  case class Owner(login: String) {
+    override def toString: String = login
+  }
+
+  case class Repo(name: String)
+
+  object Owner {
+    implicit val jsonReads: Reads[Owner] = {
+      (__ \ "organization" \ "login").read[String]
+        .orElse((__ \ "account" \ "login").read[String])
+        .orElse((__  \ "login").read[String])
+        .map(Owner(_))
+    }
+    implicit val jsonWrites: Writes[Owner] = Json.writes[Owner]
+  }
+
+  def pullRequestInfo(prUrl: String): (OwnerRepo, Int) = {
+    val url = new URL(prUrl)
+    val parts = url.getPath.stripPrefix("/").split("/pull/")
+    OwnerRepo(parts(0)) -> parts(1).toInt
+  }
+
+  def pullRequestInfo(pullRequest: JsObject): (OwnerRepo, Int) = {
+    val repo = (pullRequest \ "pull_request" \ "base" \ "repo").as[OwnerRepo]
+    val prNumber = (pullRequest \ "pull_request" \ "number").as[Int]
+
+    repo -> prNumber
+  }
+
+  def pullRequestUrl(ownerRepo: OwnerRepo, prNum: Int): String = s"https://github.com/$ownerRepo/pull/$prNum"
 
   case class IncorrectResponseStatus(expectedStatusCode: Int, actualStatusCode: Int, uri: URI, message: String) extends Exception {
     override def getMessage: String = s"$uri - Expected status code $expectedStatusCode but got $actualStatusCode - $message"
@@ -901,6 +938,9 @@ object GitHub {
       }
     }
   }
+
+
+  case class AuthInfo(encAuthToken: String, gitHubUser: GitHubUser, maybeFullName: Option[String], maybeEmail: Option[String])
 
   case class ContributorWithMetrics(contributor: Contributor, numCommits: Int)
 

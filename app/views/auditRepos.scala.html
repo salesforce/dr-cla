@@ -7,7 +7,7 @@
 
 @this(webJarsUtil: org.webjars.play.WebJarsUtil, main: main)
 
-@(org: String, repos: Seq[_root_.utils.GitHub.Repo], encAccessToken: String)
+@(repos: Seq[_root_.utils.GitHub.OwnerRepo], encAccessToken: String)
 
 @repos.map { repo =>
     <div class="slds-media slds-tile">
@@ -21,7 +21,7 @@
                 <p class="slds-tile__title slds-truncate"><a href="https://github.com/@repo.ownerRepo">@repo.ownerRepo</a></p>
             </div>
             <div class="slds-tile__detail slds-text-body--small">
-                <div data-href="@routes.Application.auditContributors(org, repo.ownerRepo, encAccessToken)" data-autoload="false">
+                <div data-href="@routes.Application.auditContributors(repo, encAccessToken)" data-autoload="false">
                     <button class="slds-button slds-button--brand slds-button--small">
                         Load Contributor CLA Statuses
                         @webJarsUtil.locate("slds_spinner.gif").img(Map("alt" -> "Loading...", "class" -> "slds-button__icon slds-button__icon--right", "style" -> "height: 1rem; display: none;"))

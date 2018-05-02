@@ -9,11 +9,11 @@
 
 @this(webJarsUtil: org.webjars.play.WebJarsUtil, main: main)
 
-@(org: String, repo: String, prNum: Int, missingCla: Set[GitHub.Contributor], claUrl: String)
+@(ownerRepo: GitHub.OwnerRepo, prNum: Int, missingCla: Set[GitHub.Contributor], claUrl: String)
 
-@main("CLA Status", true) {
+@main("CLA Status", false) {
 
-    <h2 class="slds-text-heading--large" style="margin-bottom: 20px;">CLA Status for <a href="https://github.com/@org/@repo/pull/@prNum">@org/@repo#@prNum</a></h2>
+    <h2 class="slds-text-heading--large" style="margin-bottom: 20px;">CLA Status for <a href="@GitHub.pullRequestUrl(ownerRepo, prNum)">@ownerRepo#@prNum</a></h2>
 
     @if(missingCla.nonEmpty) {
 

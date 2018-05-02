@@ -9,9 +9,7 @@
 
 @this(webJarsUtil: org.webjars.play.WebJarsUtil, main: main, viewHelpers: ViewHelpers)
 
-@(authUrl: String, maybeGitHubAuthInfo: Option[GitHubAuthInfo], claVersion: String, claText: String, svgInline: (String, String) => Html)
-
-@import scala.util.Success
+@(authUrl: String, maybeGitHubAuthInfo: Option[_root_.utils.GitHub.AuthInfo], claVersion: String, claText: String, maybePrUrl: Option[String], svgInline: (String, String) => Html)
 
 @main("Sign the " + viewHelpers.organizationName) {
 
@@ -43,7 +41,7 @@
                                         @maybeGitHubAuthInfo.fold {
                                             <a href="@authUrl" class="slds-button slds-button--brand">Login to GitHub</a>
                                         } { gitHubAuthInfo =>
-                                            Logged in as: @gitHubAuthInfo.userName
+                                            Logged in as: @gitHubAuthInfo.gitHubUser.username
                                         }
                                     </p>
                                 </div>
@@ -105,7 +103,7 @@
                                             <a href="@authUrl" class="slds-button slds-button--brand">Login via GitHub to sign the CLA</a>
                                         </div>
                                     } { gitHubAuthInfo =>
-                                        <form id="agree-form" action="@routes.Application.submitCla()" method="post" class="slds-tile__detail slds-form--stacked">
+                                        <form id="agree-form" action="@routes.Application.submitCla(maybePrUrl)" method="post" class="slds-tile__detail slds-form--stacked">
                                             <input type="hidden" name="encGitHubToken" value="@gitHubAuthInfo.encAuthToken"/>
                                             <input type="hidden" name="claVersion" value="@claVersion"/>
                                             <div class="slds-form-element slds-is-required">

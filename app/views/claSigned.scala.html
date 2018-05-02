@@ -7,8 +7,14 @@
 
 @this(main: main, viewHelpers: helpers.ViewHelpers)
 
+@(maybePrUrl: Option[String])
+
 @main(viewHelpers.organizationName + " CLA Signed") {
 
     <h2 class="slds-text-heading--large">Thanks for signing the CLA!</h2>
+
+    @for(prUrl <- maybePrUrl) {
+        <h2 class="slds-text-heading--medium"><a href="@prUrl">Return to your Pull Request</a></h2>
+    }
 
 }

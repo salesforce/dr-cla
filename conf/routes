@@ -4,17 +4,17 @@
 
 GET         /                                       controllers.Application.index
 
-GET         /sign-cla                               controllers.Application.signCla
-POST        /sign-cla                               controllers.Application.submitCla
+GET         /sign-cla                               controllers.Application.signCla(prUrl: Option[String])
+POST        /sign-cla                               controllers.Application.submitCla(prUrl: Option[String])
 
-GET         /signed-cla                             controllers.Application.signedCla
+GET         /signed-cla                             controllers.Application.signedCla(prUrl: Option[String])
 
 POST        /webhook-integration                    controllers.Application.webhookIntegration
 
-GET         /status/:org/:repo/pull/:prNum          controllers.Application.status(org: String, repo: String, prNum: Int)
+GET         /status/*ownerRepo/pull/:prNum          controllers.Application.status(ownerRepo: utils.GitHub.OwnerRepo, prNum: Int)
 
 GET         /audit                                  controllers.Application.audit
-GET         /audit/contributors                     controllers.Application.auditContributors(org: String, ownerRepo: String, encAccessToken: String)
+GET         /audit/contributors                     controllers.Application.auditContributors(ownerRepo: utils.GitHub.OwnerRepo, encAccessToken: String)
 
 GET         /.well-known/acme-challenge/:key        controllers.Application.wellKnown(key)
 

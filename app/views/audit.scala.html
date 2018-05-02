@@ -9,7 +9,7 @@
 
 @this(main: main, webJarsUtil: org.webjars.play.WebJarsUtil, viewHelpers: ViewHelpers, auditReposView: auditRepos)
 
-@(orgs: scala.collection.immutable.Map[String, Seq[_root_.utils.GitHub.Repo]], integrationSlug: String, encAccessToken: String)
+@(orgs: scala.collection.immutable.Map[String, Seq[_root_.utils.GitHub.OwnerRepo]], integrationSlug: String, encAccessToken: String)
 
 @main("CLA Audit") {
 
@@ -24,7 +24,7 @@
                     <div class="slds-tile__detail slds-text-body--small">
                         <ul class="slds-tile__detail slds-list--vertical slds-text-body--small">
                             <li class="slds-truncate slds-list__item nohover">
-                                @auditReposView(org, repos, encAccessToken)
+                                @auditReposView(repos, encAccessToken)
                             </li>
                         </ul>
                     </div>

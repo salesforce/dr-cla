@@ -37,13 +37,13 @@ class Application @Inject()
 
   val claVersions = Set("0.0")
   val latestClaVersion = claVersions.head
+  val PR_URL = "PR_URL"
 
   val gitHubOauthScopesForClaSigning = Seq("user:email")
   val maybeOrgEmail = configuration.getOptional[String]("app.organization.email")
-  val gitHubOauthScopesForStatus = Seq("repo") // todo: there isn't an oauth scope that allows read-only access to private repos in other accounts
 
-  def index = Action {
-    viewHelper.maybeOrganizationUrl.fold(Redirect(routes.Application.signCla()))(Redirect(_))
+  def index = Action { request =>
+    viewHelper.maybeOrganizationUrl.fold(Redirect(routes.Application.signCla(None)))(Redirect(_))
   }
 
   def wellKnown(key: String) = Action {
@@ -78,10 +78,10 @@ class Application @Inject()
     }
   }
 
-  def signCla = Action.async { implicit request =>
+  def signCla(maybePrUrl: Option[String]) = Action.async { implicit request =>
     getGitHubAuthInfo(request).flatMap { maybeGitHubAuthInfo =>
       val claSignatureExistsFuture = maybeGitHubAuthInfo.fold(Future.unit) { gitHubAuthInfo =>
-        db.findClaSignaturesByGitHubIds(Set(GitHub.GitHubUser(gitHubAuthInfo.userName))).flatMap { claSignatures =>
+        db.findClaSignaturesByGitHubIds(Set(gitHubAuthInfo.gitHubUser)).flatMap { claSignatures =>
           claSignatures.headOption.fold(Future.unit) { claSignature =>
             Future.failed(AlreadyExistsException(claSignature))
           }
@@ -89,8 +89,8 @@ class Application @Inject()
       }
 
       claSignatureExistsFuture.map { _ =>
-        val authUrl = gitHubAuthUrl(gitHubOauthScopesForClaSigning, routes.Application.signCla().absoluteURL())
-        Ok(claSignView(authUrl, maybeGitHubAuthInfo, latestClaVersion, viewHelper.claText, svgInline))
+        val authUrl = gitHubAuthUrl(gitHubOauthScopesForClaSigning, routes.Application.signCla(maybePrUrl).absoluteURL())
+        Ok(claSignView(authUrl, maybeGitHubAuthInfo, latestClaVersion, viewHelper.claText, maybePrUrl, svgInline))
       } recover {
         case AlreadyExistsException(claSignature) =>
           BadRequest(claAlreadySignedView(claSignature.signedOn))
@@ -98,7 +98,7 @@ class Application @Inject()
     }
   }
 
-  def submitCla = Action.async(parse.formUrlEncoded) { implicit request =>
+  def submitCla(maybePrUrl: Option[String]) = Action.async(parse.formUrlEncoded) { implicit request =>
     val maybeClaSignatureFuture = for {
       encGitHubToken <- request.body.get("encGitHubToken").flatMap(_.headOption)
       claVersion <- claVersions.find(request.body.get("claVersion").flatMap(_.headOption).contains)
@@ -114,6 +114,8 @@ class Application @Inject()
           for {
             userInfo <- gitHub.userInfo(gitHubToken)
             username = (userInfo \ "login").as[String]
+            authInfo = GitHub.AuthInfo(encGitHubToken, GitHub.GitHubUser(username), Some(fullName), Some(email))
+
             maybeContact <- db.findContactByGitHubId(username)
             contact <- maybeContact.fold {
               db.createContact(Contact(-1, maybeFirstName, lastName, email, username))
@@ -124,7 +126,7 @@ class Application @Inject()
             } { existingClaSignature =>
               Future.failed(AlreadyExistsException(existingClaSignature))
             }
-          } yield claSignature
+          } yield (claSignature, authInfo)
         } else {
           Future.failed(new IllegalStateException("The CLA was not agreed to."))
         }
@@ -133,16 +135,25 @@ class Application @Inject()
     maybeClaSignatureFuture.fold {
       Future.successful(BadRequest("A required field was not specified."))
     } { claSignatureFuture =>
-      for {
-        claSignature <- claSignatureFuture
-        persistedClaSignature <- db.createClaSignature(claSignature)
-      } yield {
-        revalidatePullRequests(claSignature.contactGitHubId).failed.foreach { e =>
-          Logger.error("Could not revalidate PRs", e)
-        }
+      def validatePullRequestOrRequests(claSignature: ClaSignature, authInfo: GitHub.AuthInfo): Future[Unit] = {
+        maybePrUrl.fold {
+          // do not block on this
+          revalidatePullRequests(claSignature.contactGitHubId).failed.foreach { e =>
+            Logger.error("Could not revalidate PRs", e)
+          }
 
-        Redirect(routes.Application.signedCla())
+          Future.unit
+        } { prUrl =>
+          val (ownerRepo, prNum) = GitHub.pullRequestInfo(prUrl)
+          revalidatePullRequest(ownerRepo, prNum, Some(authInfo)).map(_ => Unit)
+        }
       }
+
+      for {
+        (claSignature, authInfo) <- claSignatureFuture
+        persistedClaSignature <- db.createClaSignature(claSignature)
+        validatePullRequestOrRequests <- validatePullRequestOrRequests(claSignature, authInfo)
+      } yield Redirect(routes.Application.signedCla(maybePrUrl))
     } recover {
       case AlreadyExistsException(claSignature) =>
         BadRequest(claAlreadySignedView(claSignature.signedOn))
@@ -154,11 +165,10 @@ class Application @Inject()
         }
         InternalServerError(errorMessage)
     }
-
   }
 
-  def signedCla = Action {
-    Ok(claSignedView())
+  def signedCla(maybePrUrl: Option[String]) = Action { request =>
+    Ok(claSignedView(maybePrUrl))
   }
 
   case class NoPullRequest() extends Exception {
@@ -230,60 +240,16 @@ class Application @Inject()
     }
   }
 
-  def status(org: String, repo: String, prNum: Int) = Action.async { implicit request =>
+  def status(ownerRepo: GitHub.OwnerRepo, prNum: Int) = Action.async { implicit request =>
     getGitHubAuthInfo(request).flatMap { maybeGitHubAuthInfo =>
-      gitHub.integrationInstallations().flatMap { installations =>
-        val maybeOrgInstall = installations.as[Seq[JsObject]].find { repoJson =>
-          val login = (repoJson \ "account" \ "login").as[String]
-          login == org
-        }
-
-        maybeOrgInstall.fold(Future.successful(BadRequest("GitHub App not installed on that org"))) { orgInstall =>
-          val id = (orgInstall \ "id").as[Int]
-          gitHub.installationAccessTokens(id).flatMap { installationAccessTokenJson =>
-            val installationAccessToken = (installationAccessTokenJson \ "token").as[String]
-
-            gitHub.installationRepositories(installationAccessToken).flatMap { installationRepositories =>
-
-              val maybeRepo = installationRepositories.value.find { repoJson =>
-                (repoJson \ "name").asOpt[String].contains(repo)
-              }
-
-              maybeRepo.fold(Future.successful(BadRequest("GitHub App not enabled on that repo"))) { repoJson =>
-                val fullName = (repoJson \ "full_name").as[String]
-                val isPrivate = (repoJson \ "private").as[Boolean]
-
-                def renderStatus(accessToken: String): Future[Result] = {
-                  gitHub.getPullRequest(fullName, prNum, accessToken).flatMap { pullRequest =>
-                    gitHub.pullRequestWithCommitsAndStatus(accessToken)(pullRequest).flatMap { pullRequestDetails =>
-                      validatePullRequest(pullRequestDetails, accessToken).map {
-                        case (_, claMissing, _) =>
-                          val claUrl = routes.Application.signCla().absoluteURL()
-                          Ok(claStatusView(org, repo, prNum, claMissing, claUrl))
-                      }
-                    }
-                  }
-                }
-
-                if (isPrivate) {
-                  maybeGitHubAuthInfo.fold {
-                    Future.successful(
-                      Redirect(
-                        gitHubAuthUrl(gitHubOauthScopesForStatus, routes.Application.status(org, repo, prNum).absoluteURL())
-                      )
-                    )
-                  } { gitHubAuthInfo =>
-                    val userAccessToken = crypto.decryptAES(gitHubAuthInfo.encAuthToken)
-                    renderStatus(userAccessToken)
-                  }
-                }
-                else {
-                 renderStatus(installationAccessToken)
-                }
-              }
-            }
-          }
-        }
+      revalidatePullRequest(ownerRepo, prNum, maybeGitHubAuthInfo).map { case (_, claMissing, _) =>
+        val claUrl = routes.Application.signCla(Some(GitHub.pullRequestUrl(ownerRepo, prNum))).absoluteURL()
+        Ok(claStatusView(ownerRepo, prNum, claMissing, claUrl))
+      } recover {
+        case NeedsAuth =>
+          Redirect(gitHubAppAuthUrl(routes.Application.status(ownerRepo, prNum).absoluteURL()))
+        case irs: GitHub.IncorrectResponseStatus if irs.actualStatusCode == NOT_FOUND =>
+          NotFound("Repo Not Found")
       }
     }
   }
@@ -307,7 +273,7 @@ class Application @Inject()
           Future.foldLeft(repoFutures)(JsArray.empty)(_ ++ _).map { repos =>
             val orgRepos = repos.value.map { repoJson =>
               val org = (repoJson \ "owner" \ "login").as[String]
-              val repo = repoJson.as[GitHub.Repo]
+              val repo = repoJson.as[GitHub.OwnerRepo]
 
               org -> repo
             }.groupBy(_._1).mapValues(_.map(_._2))
@@ -326,7 +292,7 @@ class Application @Inject()
     }
   }
 
-  def auditContributors(org: String, ownerRepo: String, encAccessToken: String) = Action.async { implicit request =>
+  def auditContributors(ownerRepo: GitHub.OwnerRepo, encAccessToken: String) = Action.async { implicit request =>
     val accessToken = crypto.decryptAES(encAccessToken)
 
     val collaboratorsFuture = gitHub.collaborators(ownerRepo, accessToken)
@@ -393,33 +359,35 @@ class Application @Inject()
     Html(svgSymbol(path, symbol).toString())
   }
 
-  private def getGitHubAuthInfo(request: RequestHeader): Future[Option[GitHubAuthInfo]] = {
+  private def getGitHubAuthInfo(request: RequestHeader): Future[Option[GitHub.AuthInfo]] = {
     request.flash.get("encAccessToken").fold {
-      Future.successful[Option[GitHubAuthInfo]](None)
+      Future.successful[Option[GitHub.AuthInfo]](None)
     } { encAccessToken =>
       val accessToken = crypto.decryptAES(encAccessToken)
       gitHub.userInfo(accessToken).map { userInfo =>
         val username = (userInfo \ "login").as[String]
         val maybeFullName = (userInfo \ "name").asOpt[String]
         val maybeEmail = (userInfo \ "email").asOpt[String]
-        Some(GitHubAuthInfo(encAccessToken, username, maybeFullName, maybeEmail))
+        Some(GitHub.AuthInfo(encAccessToken, GitHub.GitHubUser(username), maybeFullName, maybeEmail))
       }
     }
   }
 
-  private def validatePullRequest(pullRequestToBeValidated: JsObject, token: String)(implicit request: RequestHeader): Future[(Set[GitHub.Contributor], Set[GitHub.Contributor], JsObject)] = {
-    val claUrl = routes.Application.signCla().absoluteURL()
-    val statusUrl = (owner: String, repo: String, prNum: Int) => routes.Application.status(owner, repo, prNum).absoluteURL()
+  private def validatePullRequest(pullRequestToBeValidated: JsObject, token: String)(implicit request: RequestHeader): Future[GitHub.ValidationResult] = {
+    val (ownerRepo, prNum) = GitHub.pullRequestInfo(pullRequestToBeValidated)
+    val claUrl = routes.Application.signCla(Some(GitHub.pullRequestUrl(ownerRepo, prNum))).absoluteURL()
+    val statusUrl = routes.Application.status(ownerRepo, prNum).absoluteURL()
+
     gitHub.validatePullRequest(pullRequestToBeValidated, token, claUrl, statusUrl) { externalCommitters =>
       val gitHubUsers = externalCommitters.collect { case gitHubUser: GitHub.GitHubUser => gitHubUser }
       db.findClaSignaturesByGitHubIds(gitHubUsers)
     }
   }
 
-  private def validatePullRequests(pullRequestsToBeValidated: Map[JsObject, String])(implicit request: RequestHeader): Future[Iterable[(Set[GitHub.Contributor], Set[GitHub.Contributor], JsObject)]] = {
-    val claUrl = routes.Application.signCla().absoluteURL()
-    val statusUrl = (owner: String, repo: String, prNum: Int) => routes.Application.status(owner, repo, prNum).absoluteURL()
-    gitHub.validatePullRequests(pullRequestsToBeValidated, claUrl, statusUrl) { externalCommitters =>
+  private def validatePullRequests(pullRequestsToBeValidated: Map[JsObject, String])(implicit request: RequestHeader): Future[Iterable[GitHub.ValidationResult]] = {
+    val claUrlF = (ownerRepo: GitHub.OwnerRepo, prNum: Int) => routes.Application.signCla(Some(GitHub.pullRequestUrl(ownerRepo, prNum))).absoluteURL()
+    val statusUrlF = (ownerRepo: GitHub.OwnerRepo, prNum: Int) => routes.Application.status(ownerRepo, prNum).absoluteURL()
+    gitHub.validatePullRequests(pullRequestsToBeValidated, claUrlF, statusUrlF) { externalCommitters =>
       val gitHubUsers = externalCommitters.collect { case gitHubUser: GitHub.GitHubUser => gitHubUser }
       db.findClaSignaturesByGitHubIds(gitHubUsers)
     }
@@ -427,11 +395,57 @@ class Application @Inject()
 
   // When someone signs the CLA we don't know what PR we need to update.
   // So get all the PRs we have access to, that have the contributor which just signed the CLA and where the status is failed.
-  private def revalidatePullRequests(signerGitHubId: String)(implicit request: RequestHeader): Future[Iterable[(Set[GitHub.Contributor], Set[GitHub.Contributor], JsObject)]] = {
+  private def revalidatePullRequests(signerGitHubId: String)(implicit request: RequestHeader): Future[Iterable[GitHub.ValidationResult]] = {
     for {
       pullRequestsToBeValidated <- gitHub.pullRequestsToBeValidated(signerGitHubId)
       validation <- validatePullRequests(pullRequestsToBeValidated)
     } yield validation
+  }
+
+  private def revalidatePullRequest(ownerRepo: GitHub.OwnerRepo, prNum: Int, maybeGitHubAuthInfo: Option[GitHub.AuthInfo])(implicit request: RequestHeader): Future[GitHub.ValidationResult] = {
+    gitHub.integrationInstallations().flatMap { installations =>
+      val maybeOrgInstall = installations.as[Seq[JsObject]].find { repoJson =>
+        repoJson.as[GitHub.Owner] == ownerRepo.owner
+      }
+
+      maybeOrgInstall.fold(Future.failed[GitHub.ValidationResult](new Exception(s"GitHub App not installed on ${ownerRepo.owner}"))) { orgInstall =>
+        val id = (orgInstall \ "id").as[Int]
+        gitHub.installationAccessTokens(id).flatMap { installationAccessTokenJson =>
+          val installationAccessToken = (installationAccessTokenJson \ "token").as[String]
+
+          gitHub.installationRepositories(installationAccessToken).flatMap { installationRepositories =>
+
+            val maybeRepo = installationRepositories.value.find { repoJson =>
+              repoJson.asOpt[GitHub.OwnerRepo].contains(ownerRepo)
+            }
+
+            maybeRepo.fold(Future.failed[GitHub.ValidationResult](new Exception(s"GitHub App not enabled on $ownerRepo"))) { repoJson =>
+              val isPrivate = (repoJson \ "private").as[Boolean]
+
+              def getAndValidatePullRequest(accessToken: String): Future[GitHub.ValidationResult] = {
+                gitHub.getPullRequest(ownerRepo, prNum, accessToken).flatMap { pullRequest =>
+                  gitHub.pullRequestWithCommitsAndStatus(accessToken)(pullRequest).flatMap { pullRequestDetails =>
+                    validatePullRequest(pullRequestDetails, accessToken)
+                  }
+                }
+              }
+
+              if (isPrivate) {
+                maybeGitHubAuthInfo.fold {
+                  Future.failed[GitHub.ValidationResult](NeedsAuth)
+                } { gitHubAuthInfo =>
+                  val userAccessToken = crypto.decryptAES(gitHubAuthInfo.encAuthToken)
+                  getAndValidatePullRequest(userAccessToken)
+                }
+              }
+              else {
+                getAndValidatePullRequest(installationAccessToken)
+              }
+            }
+          }
+        }
+      }
+    }
   }
 
   private def gitHubAppAuthUrl(state: String)(implicit request: RequestHeader): String = {
@@ -456,5 +470,7 @@ class Application @Inject()
   }
 
   case class AlreadyExistsException(claSignature: ClaSignature) extends Exception
+
+  case object NeedsAuth extends Exception
 
 }
