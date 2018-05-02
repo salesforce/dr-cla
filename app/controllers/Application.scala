@@ -37,7 +37,6 @@ class Application @Inject()
 
   val claVersions = Set("0.0")
   val latestClaVersion = claVersions.head
-  val PR_URL = "PR_URL"
 
   val gitHubOauthScopesForClaSigning = Seq("user:email")
   val maybeOrgEmail = configuration.getOptional[String]("app.organization.email")
