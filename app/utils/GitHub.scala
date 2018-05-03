@@ -339,33 +339,9 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     }
   }
 
-  def orgWebhooks(org: String, accessToken: String): Future[JsArray] = {
-    val path = s"orgs/$org/hooks"
-    ws(path, accessToken).get().flatMap(okT[JsArray])
-  }
-
   def userOrgMembership(org: String, accessToken: String): Future[JsObject] = {
     val path = s"user/memberships/orgs/$org"
     ws(path, accessToken).get().flatMap(okT[JsObject])
-  }
-
-  def addOrgWebhook(org: String, events: Seq[String], url: String, contentType: String, accessToken: String): Future[JsValue] = {
-    val path = s"orgs/$org/hooks"
-    val json = Json.obj(
-      "name" -> "web",
-      "events" -> events,
-      "config" -> Json.obj(
-        "url" -> url,
-        "content_type" -> contentType
-      )
-    )
-    ws(path, accessToken).post(json).flatMap(created)
-  }
-
-  // todo make the tests cleanup their webhooks, pr webhooks have a limit of 20
-  def deleteOrgWebhook(org: String, hookId: Int, accessToken: String): Future[Unit] = {
-    val path = s"orgs/$org/hooks/$hookId"
-    ws(path, accessToken).delete().flatMap(nocontent).map(_ => Unit)
   }
 
   def orgMembers(org: String, accessToken: String): Future[JsArray] = {

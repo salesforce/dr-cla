@@ -11,10 +11,11 @@ import java.time.LocalDateTime
 
 import models.ClaSignature
 import modules.{Database, DatabaseMock}
+import org.scalatest.{Args, BeforeAndAfterAll, Status}
 import org.scalatestplus.play.guice.GuiceOneAppPerSuite
 import org.scalatestplus.play.PlaySpec
 import pdi.jwt.{JwtClaim, JwtJson}
-import play.api.Mode
+import play.api.{Mode, Play}
 import play.api.i18n.MessagesApi
 import play.api.inject._
 import play.api.inject.guice.GuiceApplicationBuilder
@@ -28,9 +29,9 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Random, Success, Try}
 
 
-class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
+class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
 
-  override implicit lazy val app = new GuiceApplicationBuilder()
+  lazy val app = new GuiceApplicationBuilder()
     .overrides(bind[Database].to[DatabaseMock])
     .configure(
       Map(
@@ -40,11 +41,11 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
     .in(Mode.Test)
     .build()
 
-  lazy val wsClient = app.injector.instanceOf[WSClient]
+  def wsClient = app.injector.instanceOf[WSClient]
 
-  lazy val messagesApi = app.injector.instanceOf[MessagesApi]
+  def messagesApi = app.injector.instanceOf[MessagesApi]
 
-  lazy val gitHub = new GitHub(app.configuration, wsClient, messagesApi)(ExecutionContext.global)
+  def gitHub = new GitHub(app.configuration, wsClient, messagesApi)(ExecutionContext.global)
 
   val urlF = (_: OwnerRepo, _: Int) => "http://asdf.com"
 
@@ -324,37 +325,34 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
   lazy val testInternalPullRequestNum = (testInternalPullRequest \ "pull_request" \ "number").as[Int]
   lazy val testInternalPullRequestSha = (testInternalPullRequest \ "pull_request" \ "head" \ "sha").as[String]
 
-  "we" must {
-    "setup stuff" in {
-      testRepo1
-      testRepo2
-      testRepo3
-      testFork
-      testOrgRepo
-      testPullRequests
+  override def beforeAll() = {
+    testRepo1
+    testRepo2
+    testRepo3
+    testFork
+    testOrgRepo
+    testPullRequests
+
+    withClue(s"$testLogin2 must not be a collaborator on $testRepo1: ") {
+      val testRepo1Collaborators = await(gitHub.collaborators(testRepo1, testToken1))
+      testRepo1Collaborators must not contain GitHub.GitHubUser(testLogin2)
     }
-    "verify the test structure" in {
-      withClue(s"$testLogin2 must not be a collaborator on $testRepo1: ") {
-        val testRepo1Collaborators = await(gitHub.collaborators(testRepo1, testToken1))
-        testRepo1Collaborators must not contain GitHub.GitHubUser(testLogin2)
-      }
 
-      withClue(s"$testLogin2 must be a private member of $testOrg: ") {
-        val allOrgMembers = await(gitHub.orgMembers(testOrg, testToken1))
-        allOrgMembers.value.exists(_.\("login").as[String] == testLogin2) must be (true)
-        val publicOrgMembers = await(gitHub.orgMembers(testOrg, testIntegrationToken))
-        publicOrgMembers.value.exists(_.\("login").as[String] == testLogin2) must be (false)
-      }
+    withClue(s"$testLogin2 must be a private member of $testOrg: ") {
+      val allOrgMembers = await(gitHub.orgMembers(testOrg, testToken1))
+      allOrgMembers.value.exists(_.\("login").as[String] == testLogin2) must be (true)
+      val publicOrgMembers = await(gitHub.orgMembers(testOrg, testIntegrationToken))
+      publicOrgMembers.value.exists(_.\("login").as[String] == testLogin2) must be (false)
+    }
 
-      withClue(s"the integration must be installed on $testOrg: ") {
-        val integrationInstallations = await(gitHub.integrationInstallations())
-        integrationInstallations.value.exists(_.\("account").\("login").as[String] == testOrg) must be (true)
-      }
+    withClue(s"the integration must be installed on $testOrg: ") {
+      val integrationInstallations = await(gitHub.integrationInstallations())
+      integrationInstallations.value.exists(_.\("account").\("login").as[String] == testOrg) must be (true)
+    }
 
-      withClue(s"the integration must be installed on $testLogin1: ") {
-        val integrationInstallations = await(gitHub.integrationInstallations())
-        integrationInstallations.value.exists(_.\("account").\("login").as[String] == testLogin1) must be (true)
-      }
+    withClue(s"the integration must be installed on $testLogin1: ") {
+      val integrationInstallations = await(gitHub.integrationInstallations())
+      integrationInstallations.value.exists(_.\("account").\("login").as[String] == testLogin1) must be (true)
     }
   }
 
@@ -518,31 +516,6 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
     "remove a label from issue" in {
       val removedLabel = await(gitHub.removeLabel(testExternalPullRequestOwnerRepo, "foobar", testExternalPullRequestNum, testToken1))
       removedLabel must equal (())
-    }
-  }
-
-  "GitHub.addOrgWebhook" must {
-    "create an org Webhook" in {
-      val status = await(gitHub.addOrgWebhook(testOrg, Seq("pull_request"), "http://localhost:9000/foobar", "json", testToken1))
-      (status \ "active").as[Boolean] must be (true)
-    }
-  }
-
-  "GitHub.orgWebhooks" must {
-    "get the org webhooks" in {
-      val webhooks = await(gitHub.orgWebhooks(testOrg, testToken1))
-      webhooks.value.exists(_.\("config").\("url").as[String] == "http://localhost:9000/foobar") must be (true)
-    }
-  }
-
-  "GitHub.addOrgWebhook" must {
-    "delete an org Webhook" in {
-      val webhooks = await(gitHub.orgWebhooks(testOrg, testToken1))
-      val deletes = webhooks.value.filter(_.\("config").\("url").as[String] == "http://localhost:9000/foobar").map { webhook =>
-        val hookId = (webhook \ "id").as[Int]
-        await(gitHub.deleteOrgWebhook(testOrg, hookId, testToken1))
-      }
-      deletes.size must be > 0
     }
   }
 
@@ -739,16 +712,16 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
     }
   }
 
-  "we" must {
-    "cleanup" in {
-      if (sys.env.get("DO_NOT_CLEANUP").isEmpty) {
-        await(gitHub.deleteRepo(testFork)(testToken2))
-        await(gitHub.deleteRepo(testRepo1)(testToken1))
-        await(gitHub.deleteRepo(testRepo2)(testToken1))
-        await(gitHub.deleteRepo(testRepo3)(testToken1))
-        await(gitHub.deleteRepo(testOrgRepo)(testToken1))
-      }
+  override def afterAll() = {
+    if (sys.env.get("DO_NOT_CLEANUP").isEmpty) {
+      await(gitHub.deleteRepo(testFork)(testToken2))
+      await(gitHub.deleteRepo(testRepo1)(testToken1))
+      await(gitHub.deleteRepo(testRepo2)(testToken1))
+      await(gitHub.deleteRepo(testRepo3)(testToken1))
+      await(gitHub.deleteRepo(testOrgRepo)(testToken1))
     }
+
+    await(app.stop())
   }
 
 }
