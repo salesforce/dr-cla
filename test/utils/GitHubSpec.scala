@@ -176,6 +176,22 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
     }
   }
 
+  private def addUnknownCommit(ownerRepo: OwnerRepo): String = {
+    val commit = await(gitHub.repoCommits(ownerRepo, testToken1)).value.head
+
+    val sha = (commit \ "sha").as[String]
+    val tree = (commit \ "commit" \ "tree" \ "sha").as[String]
+
+    val author = unknownCommitter(ownerRepo) match {
+      case UnknownCommitter(Some(name), Some(email)) => Some(name -> email)
+      case _ => None
+    }
+
+    val newCommit = await(gitHub.commit(ownerRepo, "test non-github commit", tree, Set(sha), author, testToken1))
+
+    (newCommit \ "sha").as[String]
+  }
+
   private def createRepo(): OwnerRepo = {
     val repoName = Random.alphanumeric.take(8).mkString
     val createRepoResult = await(gitHub.createRepo(repoName, None, true)(testToken1))
@@ -195,17 +211,9 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
     waitForCommits(ownerRepo, testToken1)
     waitForCommits(ownerRepo, testToken2)
 
-    // add an commit with a non-github committer
-    val commit = await(gitHub.repoCommits(ownerRepo, testToken1)).value.head
+    val newSha = addUnknownCommit(ownerRepo)
 
-    val sha = (commit \ "sha").as[String]
-    val tree = (commit \ "commit" \ "tree" \ "sha").as[String]
-
-    val newCommit = await(gitHub.commit(ownerRepo, "test non-github commit", tree, Set(sha), Some(repoName, s"$repoName@$repoName.com"), testToken1))
-
-    val newSha = (newCommit \ "sha").as[String]
-
-    val updateRef = await(gitHub.updateGitRef(ownerRepo, newSha, "heads/master", testToken1))
+    await(gitHub.updateGitRef(ownerRepo, newSha, "heads/master", testToken1))
 
     waitForCommit(ownerRepo, newSha, testToken1)
 
@@ -227,6 +235,10 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
   lazy val testRepo3 = createRepo()
   lazy val testFork = createFork()
   lazy val testOrgRepo = createOrgRepo(testOrg)
+
+  def unknownCommitter(ownerRepo: OwnerRepo) = {
+    UnknownCommitter(Some(ownerRepo.repo.name), Some(s"${ownerRepo.repo.name}@${ownerRepo.repo.name}.com".toLowerCase))
+  }
 
   def createTestExternalPullRequest() = {
     val testRepos2 = await(gitHub.userRepos(testLogin2, testToken2))
@@ -312,6 +324,22 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
     await(gitHub.getPullRequest(testRepo1, prNumber, testToken1))
   }
 
+  def createTestUnknownPullRequest() = {
+    def sha = addUnknownCommit(testRepo1)
+    val newBranchName = Random.alphanumeric.take(8).mkString
+
+    await(gitHub.createBranch(testRepo1, newBranchName, sha, testToken1))
+
+    val pullRequest = await(gitHub.createPullRequest(testRepo1, "Updates", newBranchName, "master", testToken1))
+    (pullRequest \ "id").asOpt[Int] must be ('defined)
+    val prNumber = (pullRequest \ "number").as[Int]
+
+    waitForPullRequest(testRepo1, prNumber, testToken1)
+    waitForPullRequest(testRepo1, prNumber, testToken2)
+
+    await(gitHub.getPullRequest(testRepo1, prNumber, testToken1))
+  }
+
   lazy val testInternalPullRequest = Json.obj("pull_request" -> createTestInternalPullRequest())
 
 
@@ -324,6 +352,11 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
   lazy val testInternalPullRequestOwnerRepo = (testInternalPullRequest \ "pull_request" \ "base" \ "repo").as[OwnerRepo]
   lazy val testInternalPullRequestNum = (testInternalPullRequest \ "pull_request" \ "number").as[Int]
   lazy val testInternalPullRequestSha = (testInternalPullRequest \ "pull_request" \ "head" \ "sha").as[String]
+
+  lazy val testUnknownPullRequest = Json.obj("pull_request" -> createTestUnknownPullRequest())
+  lazy val testUnknownPullRequestOwnerRepo = (testUnknownPullRequest \ "pull_request" \ "base" \ "repo").as[OwnerRepo]
+  lazy val testUnknownPullRequestNum = (testUnknownPullRequest \ "pull_request" \ "number").as[Int]
+  lazy val testUnknownPullRequestSha = (testUnknownPullRequest \ "pull_request" \ "head" \ "sha").as[String]
 
   override def beforeAll() = {
     testRepo1
@@ -611,8 +644,8 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
       pullRequestUserCommitters must equal (Set(GitHub.GitHubUser(testLogin1)))
     }
     "fail with non-github user contributors" in {
-      // todo: but hard to simulate
-      cancel()
+      val pullRequestUserCommitters = await(gitHub.pullRequestUserCommitters(testUnknownPullRequestOwnerRepo, testUnknownPullRequestNum, testUnknownPullRequestSha, testIntegrationToken))
+      pullRequestUserCommitters must equal (Set(unknownCommitter(testUnknownPullRequestOwnerRepo)))
     }
   }
 
@@ -698,10 +731,9 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
 
   "repoContributors" should {
     "work" in {
-      val repoContributors = await(gitHub.repoContributors(testOrgRepo, testIntegrationToken)).map(_.contributor)
-      val repoName = testOrgRepo.repo.toString
+      val repoContributors = await(gitHub.repoContributors(testRepo1, testIntegrationToken)).map(_.contributor)
       repoContributors contains GitHubUser(testLogin1)
-      repoContributors contains UnknownCommitter(Some(repoName), Some(s"$repoName@$repoName.com"))
+      repoContributors contains unknownCommitter(testRepo1)
     }
   }
 
