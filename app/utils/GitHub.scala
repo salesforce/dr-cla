@@ -22,11 +22,10 @@ import pdi.jwt.{JwtAlgorithm, JwtClaim, JwtJson}
 import play.api.Configuration
 import play.api.http.{HeaderNames, HttpVerbs, MimeTypes, Status}
 import play.api.i18n.{Lang, MessagesApi}
+import play.api.libs.functional.syntax._
 import play.api.libs.json.Reads._
 import play.api.libs.json._
-import play.api.libs.functional.syntax._
 import play.api.libs.ws.{WSClient, WSRequest, WSResponse}
-import play.api.mvc.QueryStringBindable.Parsing
 import play.api.mvc.{PathBindable, QueryStringBindable}
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -50,6 +49,11 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
 
   val gitHubBotName = configuration.get[String]("github.botname")
   val orgName = configuration.get[String]("app.organization.name")
+
+  val maybeDomainAndInstructionsUrl = (configuration.getOptional[String]("app.organization.domain"), configuration.getOptional[String]("app.organization.internal-instructions-url")) match {
+    case (Some(domain), Some(instructionsUrl)) => Some(domain, instructionsUrl)
+    case _ => None
+  }
 
   val integrationKeyPair: KeyPair = {
     val privateKeyString = configuration.get[String]("github.integration.private-key")
@@ -251,7 +255,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
 
     fetchPages(path, accessToken).map { collaborators =>
       collaborators.value.map { json =>
-        GitHubUser((json \ "login").as[String])
+        User((json \ "login").as[String])
       }.toSet
     }
   }
@@ -579,18 +583,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
         maybeAuthorType.contains("Bot")
       }
 
-      val commitsWithMaybeLogins = onlyUserCommits.map { commit =>
-        val maybeAuthorLogin = (commit \ "author" \ "login").asOpt[String]
-
-        maybeAuthorLogin.fold[Contributor] {
-          val author = (commit \ "commit" \ "author").as[JsObject]
-          val maybeName = (author \ "name").asOpt[String]
-          val maybeEmail = (author \ "email").asOpt[String]
-          UnknownCommitter(maybeName, maybeEmail)
-        } (GitHubUser)
-      }
-
-      commitsWithMaybeLogins.toSet
+      onlyUserCommits.map(_.as[Contributor]).toSet
     }
   }
 
@@ -598,11 +591,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     for {
       commits <- repoCommits(ownerRepo, accessToken)
     } yield {
-      val contributorsWithCommits = commits.value.groupBy[Contributor] { commit =>
-        (commit \ "author").asOpt[GitHubUser].getOrElse {
-          (commit \ "commit" \ "author").as[UnknownCommitter]
-        }
-      }
+      val contributorsWithCommits = commits.value.groupBy[Contributor](_.as[Contributor])
 
       contributorsWithCommits.map { case (contributor, contributorCommits) =>
         ContributorWithMetrics(contributor, contributorCommits.size)
@@ -630,26 +619,52 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     } yield {
       // todo: maybe check latest CLA version
       // todo: ability to exclude users with a given email address domain
-      externalContributors.diff(clasForCommitters.map(claSignature => GitHubUser(claSignature.contactGitHubId)))
+      externalContributors.diff(clasForCommitters.map(claSignature => User(claSignature.contactGitHubId)))
     }
   }
 
-  def missingClaComment(ownerRepo: OwnerRepo, prNumber: Int, sha: String, claUrl: String, gitHubUsers: Set[GitHubUser], accessToken: String): Future[Option[JsValue]] = {
-    if (gitHubUsers.nonEmpty) {
+  def missingClaComment(ownerRepo: OwnerRepo, prNumber: Int, sha: String, claUrl: String, users: Set[User], accessToken: String): Future[(Option[JsValue], Option[JsValue])] = {
+    if (users.nonEmpty) {
       issueComments(ownerRepo, prNumber, accessToken).flatMap { comments =>
-        val message = messagesApi("cla.missing", gitHubUsers.map(_.username).mkString("@", " @", ""), orgName,  claUrl)
 
-        val alreadyCommented = comments.value.exists(_.\("body").as[String] == message)
-        if (!alreadyCommented) {
-          commentOnIssue(ownerRepo, prNumber, message, accessToken).map(Some(_))
+        def comment(message: String): Future[Option[JsValue]] = {
+          val alreadyCommented = comments.value.exists(_.\("body").as[String] == message)
+          if (!alreadyCommented) {
+            commentOnIssue(ownerRepo, prNumber, message, accessToken).map(Some(_))
+          }
+          else {
+            Future.successful(None)
+          }
         }
-        else {
-          Future.successful(None)
+
+        val usersToString: Set[User] => String = _.map(_.username).mkString("@", " @", "")
+
+        def externalMessage(externalUsers: Set[User]) = messagesApi("cla.missing", usersToString(externalUsers), orgName,  claUrl)
+
+        val (maybeInternalMessage, maybeExternalMessage) = maybeDomainAndInstructionsUrl.fold[(Option[String], Option[String])] {
+          None -> Some(externalMessage(users))
+        } { case (domain, instructionsUrl) =>
+          val (internalUsers, externalUsers) = users.partition { user =>
+            user.maybeEmail.exists(_.endsWith(s"@$domain"))
+          }
+
+          val maybeInternalMessage = if (internalUsers.isEmpty) None else Some(messagesApi("cla.missing.internal", usersToString(internalUsers), instructionsUrl))
+          val maybeExternalMessage = if (externalUsers.isEmpty) None else Some(externalMessage(externalUsers))
+
+          maybeInternalMessage -> maybeExternalMessage
         }
+
+        val internalUsersCommentFuture = maybeInternalMessage.map(comment).getOrElse(Future.successful(None))
+        val externalUsersCommentFuture = maybeExternalMessage.map(comment).getOrElse(Future.successful(None))
+
+        for {
+          internalUsersComment <- internalUsersCommentFuture
+          externalUsersComment <- externalUsersCommentFuture
+        } yield internalUsersComment -> externalUsersComment
       }
     }
     else {
-      Future.successful(None)
+      Future.successful(None, None)
     }
   }
 
@@ -699,19 +714,19 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     val (repo, prNumber) = pullRequestInfo(pullRequest)
     val sha = (pullRequest \ "pull_request" \ "head" \ "sha").as[String]
 
-    def addComment(gitHubUsers: Set[GitHubUser], unknownCommitters: Set[UnknownCommitter]): Future[(Option[JsValue], Option[JsValue])] = {
-      val gitHubUsersCommentFuture = missingClaComment(repo, prNumber, sha, claUrl, gitHubUsers, token)
+    def addComment(users: Set[User], unknownCommitters: Set[UnknownCommitter]): Future[(Option[JsValue], Option[JsValue], Option[JsValue])] = {
+      val usersCommentFuture = missingClaComment(repo, prNumber, sha, claUrl, users, token)
       val unknownCommittersCommentFuture = authorLoginNotFoundComment(repo, prNumber, claUrl, unknownCommitters, token)
 
       for {
-        gitHubUsersComment <- gitHubUsersCommentFuture
+        (internalUsersComment, externalUsersComment) <- usersCommentFuture
         unknownCommittersComment <- unknownCommittersCommentFuture
-      } yield gitHubUsersComment -> unknownCommittersComment
+      } yield (internalUsersComment, externalUsersComment, unknownCommittersComment)
     }
 
-    def updateStatus(gitHubUsers: Set[GitHubUser], unknownCommitters: Set[UnknownCommitter]): Future[JsObject] = {
+    def updateStatus(users: Set[User], unknownCommitters: Set[UnknownCommitter]): Future[JsObject] = {
 
-      val (state, description) = (gitHubUsers.isEmpty, unknownCommitters.isEmpty) match {
+      val (state, description) = (users.isEmpty, unknownCommitters.isEmpty) match {
         case (true, true) =>
           ("success", "All contributors have signed the CLA")
         case (false, true) =>
@@ -727,11 +742,11 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
       _ <- createStatus(repo, sha, "pending", statusUrl, "The CLA verifier is running", gitHubBotName, token)
       externalContributors <- externalContributorsForPullRequest(repo, prNumber, sha, token)
       committersWithoutClas <- committersWithoutClas(externalContributors)(clasForCommitters)
-      gitHubUsers = committersWithoutClas.collect { case gitHubUser: GitHubUser => gitHubUser }
+      users = committersWithoutClas.collect { case user: User => user }
       unknownCommitters = committersWithoutClas.collect { case unknownCommitter: UnknownCommitter => unknownCommitter }
       _ <- updatePullRequestLabel(repo, prNumber, externalContributors.nonEmpty, committersWithoutClas.nonEmpty, token)
-      _ <- addComment(gitHubUsers, unknownCommitters)
-      status <- updateStatus(gitHubUsers, unknownCommitters)
+      _ <- addComment(users, unknownCommitters)
+      status <- updateStatus(users, unknownCommitters)
     } yield (externalContributors, committersWithoutClas, status)
   }
 
@@ -874,8 +889,17 @@ object GitHub {
     override def getMessage: String = "Response body was not in the expected form"
   }
 
-  sealed trait Contributor
-  case class GitHubUser(username: String) extends Contributor
+  sealed trait Contributor {
+    val maybeName: Option[String]
+    val maybeEmail: Option[String]
+  }
+
+  case class User(username: String, maybeName: Option[String] = None, maybeEmail: Option[String] = None) extends Contributor {
+    override def equals(o: scala.Any): Boolean = o match {
+      case user: User => this.username == user.username
+      case _ => false
+    }
+  }
   case class UnknownCommitter(maybeName: Option[String], maybeEmail: Option[String]) extends Contributor {
 
     def publicEmail(email: String): Option[String] = {
@@ -916,14 +940,22 @@ object GitHub {
   }
 
 
-  case class AuthInfo(encAuthToken: String, gitHubUser: GitHubUser, maybeFullName: Option[String], maybeEmail: Option[String])
+  case class AuthInfo(encAuthToken: String, user: User)
 
   case class ContributorWithMetrics(contributor: Contributor, numCommits: Int)
 
-  implicit val gitHubUserReads: Reads[GitHubUser] = (__ \ "login").read[String].map(GitHubUser)
-  implicit val unknownCommitterReads: Reads[UnknownCommitter] = (
-    (__ \ "name").readNullable[String] ~
-    (__ \ "email").readNullable[String]
-  )(UnknownCommitter)
+  implicit val contributorReads: Reads[Contributor] = {
+    val nameReads = (__ \ "commit" \ "author" \ "name").readNullable[String]
+    val emailReads = (__ \ "commit" \ "author" \ "email").readNullable[String]
+    val loginReads = (__ \ "author" \ "login").readNullable[String]
+
+    loginReads.flatMap { maybeLogin =>
+      maybeLogin.fold[Reads[Contributor]] {
+        (nameReads ~ emailReads)(UnknownCommitter)
+      } { login =>
+        (Reads.pure(login) ~ nameReads ~ emailReads)(User)
+      }
+    }
+  }
 
 }

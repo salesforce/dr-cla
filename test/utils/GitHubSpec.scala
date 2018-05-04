@@ -11,17 +11,16 @@ import java.time.LocalDateTime
 
 import models.ClaSignature
 import modules.{Database, DatabaseMock}
-import org.scalatest.{Args, BeforeAndAfterAll, Status}
-import org.scalatestplus.play.guice.GuiceOneAppPerSuite
+import org.scalatest.BeforeAndAfterAll
 import org.scalatestplus.play.PlaySpec
 import pdi.jwt.{JwtClaim, JwtJson}
-import play.api.{Mode, Play}
 import play.api.i18n.MessagesApi
 import play.api.inject._
 import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.libs.json._
 import play.api.libs.ws.WSClient
 import play.api.test.Helpers._
+import play.api.{Configuration, Mode}
 import utils.GitHub._
 
 import scala.annotation.tailrec
@@ -41,11 +40,11 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
     .in(Mode.Test)
     .build()
 
-  def wsClient = app.injector.instanceOf[WSClient]
+  lazy val wsClient = app.injector.instanceOf[WSClient]
 
-  def messagesApi = app.injector.instanceOf[MessagesApi]
+  lazy val messagesApi = app.injector.instanceOf[MessagesApi]
 
-  def gitHub = new GitHub(app.configuration, wsClient, messagesApi)(ExecutionContext.global)
+  lazy val gitHub = new GitHub(app.configuration, wsClient, messagesApi)(ExecutionContext.global)
 
   val urlF = (_: OwnerRepo, _: Int) => "http://asdf.com"
 
@@ -237,7 +236,7 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
   lazy val testOrgRepo = createOrgRepo(testOrg)
 
   def unknownCommitter(ownerRepo: OwnerRepo) = {
-    UnknownCommitter(Some(ownerRepo.repo.name), Some(s"${ownerRepo.repo.name}@${ownerRepo.repo.name}.com".toLowerCase))
+    UnknownCommitter(Some(ownerRepo.repo.name), Some(s"${ownerRepo.repo.name}@$testOrg.com".toLowerCase))
   }
 
   def createTestExternalPullRequest() = {
@@ -368,7 +367,7 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
 
     withClue(s"$testLogin2 must not be a collaborator on $testRepo1: ") {
       val testRepo1Collaborators = await(gitHub.collaborators(testRepo1, testToken1))
-      testRepo1Collaborators must not contain GitHub.GitHubUser(testLogin2)
+      testRepo1Collaborators must not contain User(testLogin2)
     }
 
     withClue(s"$testLogin2 must be a private member of $testOrg: ") {
@@ -440,15 +439,15 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
   "GitHub.collaborators" must {
     "get the collaborators on a repo" in {
       val collaborators = await(gitHub.collaborators(testExternalPullRequestOwnerRepo, testToken1))
-      collaborators must contain (GitHub.GitHubUser(testLogin1))
+      collaborators must contain (User(testLogin1))
     }
     "work with the Integration" in {
       val collaborators = await(gitHub.collaborators(testRepo1, testIntegrationToken))
-      collaborators must contain (GitHub.GitHubUser(testLogin1))
+      collaborators must contain (User(testLogin1))
     }
     "see hidden collaborators via the Integration" in {
       val collaborators = await(gitHub.collaborators(testOrgRepo, testIntegrationTokenOrg))
-      collaborators must contain (GitHub.GitHubUser(testLogin2))
+      collaborators must contain (User(testLogin2))
     }
   }
 
@@ -641,7 +640,7 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
   "GitHub.pullRequestUserCommitters" must {
     "work" in {
       val pullRequestUserCommitters = await(gitHub.pullRequestUserCommitters(testInternalPullRequestOwnerRepo, testInternalPullRequestNum, testInternalPullRequestSha, testIntegrationToken))
-      pullRequestUserCommitters must equal (Set(GitHub.GitHubUser(testLogin1)))
+      pullRequestUserCommitters.map(_.asInstanceOf[User].username) must equal (Set(testLogin1))
     }
     "fail with non-github user contributors" in {
       val pullRequestUserCommitters = await(gitHub.pullRequestUserCommitters(testUnknownPullRequestOwnerRepo, testUnknownPullRequestNum, testUnknownPullRequestSha, testIntegrationToken))
@@ -666,6 +665,7 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
       }
 
       val validationResults = await(validationResultsFuture)
+
       validationResults.size must equal (1)
       (validationResults.head._3 \ "creator" \ "login").as[String].endsWith("[bot]") must be (true)
       (validationResults.head._3 \ "state").as[String] must equal ("success")
@@ -720,6 +720,28 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
       val issueComments = await(gitHub.issueComments(testExternalPullRequestOwnerRepo, testExternalPullRequestNum, testToken1))
       issueComments.value.count(_.\("user").\("login").as[String].endsWith("[bot]")) must equal (1)
     }
+    "comment for internal committer" in {
+      val pullRequestWithCommits = await(gitHub.pullRequestWithCommitsAndStatus(testToken1)((testExternalPullRequest \ "pull_request").as[JsObject]))
+
+      val commit = (pullRequestWithCommits \ "commits").as[Seq[JsObject]].head
+
+      val user = commit.as[Contributor].asInstanceOf[User]
+
+      val contributorDomain = user.maybeEmail.get.split("@").last
+
+      val instructionsUrl = "http://foo.com"
+
+      val config = app.configuration ++ Configuration(
+        "app.organization.domain" -> contributorDomain,
+        "app.organization.internal-instructions-url" -> instructionsUrl
+      )
+      val gitHubWithInternalConfig = new GitHub(config, wsClient, messagesApi)(ExecutionContext.global)
+
+      val externalPullRequestWithToken = Map(testExternalPullRequest -> testToken1)
+      await(gitHubWithInternalConfig.validatePullRequests(externalPullRequestWithToken, urlF, urlF)(_ => Future.successful(Set.empty[ClaSignature])))
+      val issueComments = await(gitHub.issueComments(testExternalPullRequestOwnerRepo, testExternalPullRequestNum, testToken1)).value.map(_.\("body").as[String])
+      issueComments.exists(_.contains(s"It looks like @${user.username} is an internal user")) must be (true)
+    }
   }
 
   "integrationAndUserOrgs" should {
@@ -732,7 +754,7 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
   "repoContributors" should {
     "work" in {
       val repoContributors = await(gitHub.repoContributors(testRepo1, testIntegrationToken)).map(_.contributor)
-      repoContributors contains GitHubUser(testLogin1)
+      repoContributors contains User(testLogin1)
       repoContributors contains unknownCommitter(testRepo1)
     }
   }

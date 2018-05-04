@@ -8,7 +8,6 @@
 package utils
 
 import javax.inject.Inject
-
 import models.{ClaSignature, Contact}
 import modules.Database
 
@@ -60,7 +59,7 @@ class DB @Inject()(database: Database)(implicit ec: ExecutionContext) {
     queryResult.map(newId => claSignature.copy(id = newId))
   }
 
-  def findClaSignaturesByGitHubIds(gitHubIds: Set[GitHub.GitHubUser]): Future[Set[ClaSignature]] = {
+  def findClaSignaturesByGitHubIds(gitHubIds: Set[GitHub.User]): Future[Set[ClaSignature]] = {
     val queryResult = run {
       claSignatures.filter(claSignature => liftQuery(gitHubIds.map(_.username)).contains(claSignature.contactGitHubId))
     }

@@ -8,9 +8,9 @@
 package utils
 
 import java.util.Base64
+
 import javax.crypto.{Cipher, KeyGenerator}
 import javax.inject.Inject
-
 import play.api.Configuration
 
 class Crypto @Inject() (configuration: Configuration) {

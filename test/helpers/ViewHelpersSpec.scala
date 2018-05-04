@@ -7,8 +7,8 @@
 
 package helpers
 
-import org.scalatestplus.play.PlaySpec
 import org.scalatest.Matchers._
+import org.scalatestplus.play.PlaySpec
 import org.scalatestplus.play.guice.GuiceOneAppPerTest
 import play.api.Mode
 import play.api.inject.guice.GuiceApplicationBuilder

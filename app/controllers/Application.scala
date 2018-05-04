@@ -9,17 +9,17 @@ package controllers
 
 import java.time.LocalDateTime
 
-import javax.inject.Inject
 import akka.http.scaladsl.model.Uri
 import akka.http.scaladsl.model.Uri.Query
+import javax.inject.Inject
 import models._
 import org.apache.commons.codec.digest.HmacUtils
 import org.webjars.WebJarAssetLocator
 import org.webjars.play.WebJarsUtil
-import play.api.{Configuration, Environment, Logger}
 import play.api.libs.json.{JsArray, JsObject, JsValue}
 import play.api.mvc.Results.EmptyContent
 import play.api.mvc._
+import play.api.{Configuration, Environment, Logger}
 import play.twirl.api.Html
 import utils.{Crypto, DB, GitHub}
 
@@ -80,7 +80,7 @@ class Application @Inject()
   def signCla(maybePrUrl: Option[String]) = Action.async { implicit request =>
     getGitHubAuthInfo(request).flatMap { maybeGitHubAuthInfo =>
       val claSignatureExistsFuture = maybeGitHubAuthInfo.fold(Future.unit) { gitHubAuthInfo =>
-        db.findClaSignaturesByGitHubIds(Set(gitHubAuthInfo.gitHubUser)).flatMap { claSignatures =>
+        db.findClaSignaturesByGitHubIds(Set(gitHubAuthInfo.user)).flatMap { claSignatures =>
           claSignatures.headOption.fold(Future.unit) { claSignature =>
             Future.failed(AlreadyExistsException(claSignature))
           }
@@ -113,13 +113,13 @@ class Application @Inject()
           for {
             userInfo <- gitHub.userInfo(gitHubToken)
             username = (userInfo \ "login").as[String]
-            authInfo = GitHub.AuthInfo(encGitHubToken, GitHub.GitHubUser(username), Some(fullName), Some(email))
+            authInfo = GitHub.AuthInfo(encGitHubToken, GitHub.User(username, Some(fullName), Some(email)))
 
             maybeContact <- db.findContactByGitHubId(username)
             contact <- maybeContact.fold {
               db.createContact(Contact(-1, maybeFirstName, lastName, email, username))
             } (Future.successful)
-            existingClaSignatures <- db.findClaSignaturesByGitHubIds(Set(GitHub.GitHubUser(username)))
+            existingClaSignatures <- db.findClaSignaturesByGitHubIds(Set(GitHub.User(username)))
             claSignature <- existingClaSignatures.headOption.fold {
               Future.successful(ClaSignature(-1, contact.gitHubId, LocalDateTime.now(), claVersion))
             } { existingClaSignature =>
@@ -301,7 +301,7 @@ class Application @Inject()
       collaborators <- collaboratorsFuture
       allContributors <- allContributorsFuture
       externalContributors = gitHub.externalContributors(allContributors.map(_.contributor), collaborators)
-      gitHubUsers = externalContributors.collect { case gitHubUser: GitHub.GitHubUser => gitHubUser }
+      gitHubUsers = externalContributors.collect { case gitHubUser: GitHub.User => gitHubUser }
       clasForExternalContributors <- db.findClaSignaturesByGitHubIds(gitHubUsers)
     } yield {
 
@@ -309,7 +309,7 @@ class Application @Inject()
         externalContributors.contains(contributorWithMetrics.contributor)
       } map { contributorWithMetrics =>
         contributorWithMetrics.contributor match {
-          case gitHubUser: GitHub.GitHubUser =>
+          case gitHubUser: GitHub.User =>
             contributorWithMetrics -> clasForExternalContributors.find(_.contactGitHubId == gitHubUser.username)
           case _ =>
             contributorWithMetrics -> None
@@ -367,7 +367,7 @@ class Application @Inject()
         val username = (userInfo \ "login").as[String]
         val maybeFullName = (userInfo \ "name").asOpt[String]
         val maybeEmail = (userInfo \ "email").asOpt[String]
-        Some(GitHub.AuthInfo(encAccessToken, GitHub.GitHubUser(username), maybeFullName, maybeEmail))
+        Some(GitHub.AuthInfo(encAccessToken, GitHub.User(username, maybeFullName, maybeEmail)))
       }
     }
   }
@@ -378,7 +378,7 @@ class Application @Inject()
     val statusUrl = routes.Application.status(ownerRepo, prNum).absoluteURL()
 
     gitHub.validatePullRequest(pullRequestToBeValidated, token, claUrl, statusUrl) { externalCommitters =>
-      val gitHubUsers = externalCommitters.collect { case gitHubUser: GitHub.GitHubUser => gitHubUser }
+      val gitHubUsers = externalCommitters.collect { case gitHubUser: GitHub.User => gitHubUser }
       db.findClaSignaturesByGitHubIds(gitHubUsers)
     }
   }
@@ -387,7 +387,7 @@ class Application @Inject()
     val claUrlF = (ownerRepo: GitHub.OwnerRepo, prNum: Int) => routes.Application.signCla(Some(GitHub.pullRequestUrl(ownerRepo, prNum))).absoluteURL()
     val statusUrlF = (ownerRepo: GitHub.OwnerRepo, prNum: Int) => routes.Application.status(ownerRepo, prNum).absoluteURL()
     gitHub.validatePullRequests(pullRequestsToBeValidated, claUrlF, statusUrlF) { externalCommitters =>
-      val gitHubUsers = externalCommitters.collect { case gitHubUser: GitHub.GitHubUser => gitHubUser }
+      val gitHubUsers = externalCommitters.collect { case gitHubUser: GitHub.User => gitHubUser }
       db.findClaSignaturesByGitHubIds(gitHubUsers)
     }
   }

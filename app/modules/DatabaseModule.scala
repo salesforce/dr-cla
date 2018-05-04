@@ -7,13 +7,12 @@
 
 package modules
 
-import javax.inject.{Inject, Singleton}
-
 import com.github.mauricio.async.db.SSLConfiguration
 import com.github.mauricio.async.db.pool.{PartitionedConnectionPool, PoolConfiguration}
 import com.github.mauricio.async.db.postgresql.pool.PostgreSQLConnectionFactory
 import com.github.mauricio.async.db.postgresql.util.URLParser
 import io.getquill.{PostgresAsyncContext, SnakeCase}
+import javax.inject.{Inject, Singleton}
 import org.slf4j.LoggerFactory
 import play.api.inject.{ApplicationLifecycle, Binding, Module}
 import play.api.{Configuration, Environment}

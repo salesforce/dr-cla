@@ -10,7 +10,7 @@
 @(contributor: GitHub.Contributor, hideEmail: Boolean = true)
 
 @contributor match {
-    case gitHubUser: GitHub.GitHubUser => {
+    case gitHubUser: GitHub.User => {
         <a href="https://github.com/@gitHubUser.username" style="display: inline;">@gitHubUser.username</a>
     }
     case unknownCommitter: GitHub.UnknownCommitter => {
