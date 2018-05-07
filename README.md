@@ -21,8 +21,19 @@ How it Works
 
 When someone sends a Pull Request to a project on GitHub, a Webhook sends details to this app.  The authors of the commits in the PR are checked to see if they are collaborators on the repo.  If not, the app checks if they have signed CLAs.  If there are missing CLAs then the status of the PR is set to failed.  Otherwise it is set to success.  Also if there are missing CLAs then a comment is posted on the PR asking the contributors to sign the CLA.  Once a contributor signs a CLA, all of the open PRs are revalidated.
 
-
 [![Deploy on Heroku](https://www.herokucdn.com/deploy/button.svg)](https://heroku.com/deploy)
+
+
+Optional Customization Env Vars
+----------------------
+
+    ORG_NAME = Your organization's name
+    ORG_URL = A homepage to redirect to when someone visits /
+    ORG_EMAIL = An email users can reach out to you at
+    ORG_LOGO = URL to a logo you want to display
+    ORG_CLA = URL to the CLA text
+    ORG_DOMAIN = Domain name that internal users will have in their git commit emails
+    ORG_INTERNAL_INSTRUCTIONS_URL = URL with instructions for internal users who are not on the org
 
 
 Local Dev Setup

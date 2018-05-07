@@ -20,7 +20,7 @@
         @for(contributor <- missingCla) {
             <ul class="slds-list_dotted" style="margin-left: 25px;">
                 @contributor match {
-                    case gitHubUser: GitHub.GitHubUser => {
+                    case gitHubUser: GitHub.User => {
                         <li class="slds-list__item">The GitHub user @partials.contributorIdentity(gitHubUser) needs to <a href="@claUrl">sign the CLA</a>.</li>
                     }
                     case unknownCommitter: GitHub.UnknownCommitter => {

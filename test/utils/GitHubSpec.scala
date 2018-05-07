@@ -11,16 +11,16 @@ import java.time.LocalDateTime
 
 import models.ClaSignature
 import modules.{Database, DatabaseMock}
-import org.scalatestplus.play.guice.GuiceOneAppPerSuite
+import org.scalatest.BeforeAndAfterAll
 import org.scalatestplus.play.PlaySpec
 import pdi.jwt.{JwtClaim, JwtJson}
-import play.api.Mode
 import play.api.i18n.MessagesApi
 import play.api.inject._
 import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.libs.json._
 import play.api.libs.ws.WSClient
 import play.api.test.Helpers._
+import play.api.{Configuration, Mode}
 import utils.GitHub._
 
 import scala.annotation.tailrec
@@ -28,9 +28,9 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Random, Success, Try}
 
 
-class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
+class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
 
-  override implicit lazy val app = new GuiceApplicationBuilder()
+  lazy val app = new GuiceApplicationBuilder()
     .overrides(bind[Database].to[DatabaseMock])
     .configure(
       Map(
@@ -175,6 +175,22 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
     }
   }
 
+  private def addUnknownCommit(ownerRepo: OwnerRepo): String = {
+    val commit = await(gitHub.repoCommits(ownerRepo, testToken1)).value.head
+
+    val sha = (commit \ "sha").as[String]
+    val tree = (commit \ "commit" \ "tree" \ "sha").as[String]
+
+    val author = unknownCommitter(ownerRepo) match {
+      case UnknownCommitter(Some(name), Some(email)) => Some(name -> email)
+      case _ => None
+    }
+
+    val newCommit = await(gitHub.commit(ownerRepo, "test non-github commit", tree, Set(sha), author, testToken1))
+
+    (newCommit \ "sha").as[String]
+  }
+
   private def createRepo(): OwnerRepo = {
     val repoName = Random.alphanumeric.take(8).mkString
     val createRepoResult = await(gitHub.createRepo(repoName, None, true)(testToken1))
@@ -194,17 +210,9 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
     waitForCommits(ownerRepo, testToken1)
     waitForCommits(ownerRepo, testToken2)
 
-    // add an commit with a non-github committer
-    val commit = await(gitHub.repoCommits(ownerRepo, testToken1)).value.head
+    val newSha = addUnknownCommit(ownerRepo)
 
-    val sha = (commit \ "sha").as[String]
-    val tree = (commit \ "commit" \ "tree" \ "sha").as[String]
-
-    val newCommit = await(gitHub.commit(ownerRepo, "test non-github commit", tree, Set(sha), Some(repoName, s"$repoName@$repoName.com"), testToken1))
-
-    val newSha = (newCommit \ "sha").as[String]
-
-    val updateRef = await(gitHub.updateGitRef(ownerRepo, newSha, "heads/master", testToken1))
+    await(gitHub.updateGitRef(ownerRepo, newSha, "heads/master", testToken1))
 
     waitForCommit(ownerRepo, newSha, testToken1)
 
@@ -226,6 +234,10 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
   lazy val testRepo3 = createRepo()
   lazy val testFork = createFork()
   lazy val testOrgRepo = createOrgRepo(testOrg)
+
+  def unknownCommitter(ownerRepo: OwnerRepo) = {
+    UnknownCommitter(Some(ownerRepo.repo.name), Some(s"${ownerRepo.repo.name}@$testOrg.com".toLowerCase))
+  }
 
   def createTestExternalPullRequest() = {
     val testRepos2 = await(gitHub.userRepos(testLogin2, testToken2))
@@ -311,6 +323,22 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
     await(gitHub.getPullRequest(testRepo1, prNumber, testToken1))
   }
 
+  def createTestUnknownPullRequest() = {
+    def sha = addUnknownCommit(testRepo1)
+    val newBranchName = Random.alphanumeric.take(8).mkString
+
+    await(gitHub.createBranch(testRepo1, newBranchName, sha, testToken1))
+
+    val pullRequest = await(gitHub.createPullRequest(testRepo1, "Updates", newBranchName, "master", testToken1))
+    (pullRequest \ "id").asOpt[Int] must be ('defined)
+    val prNumber = (pullRequest \ "number").as[Int]
+
+    waitForPullRequest(testRepo1, prNumber, testToken1)
+    waitForPullRequest(testRepo1, prNumber, testToken2)
+
+    await(gitHub.getPullRequest(testRepo1, prNumber, testToken1))
+  }
+
   lazy val testInternalPullRequest = Json.obj("pull_request" -> createTestInternalPullRequest())
 
 
@@ -324,37 +352,39 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
   lazy val testInternalPullRequestNum = (testInternalPullRequest \ "pull_request" \ "number").as[Int]
   lazy val testInternalPullRequestSha = (testInternalPullRequest \ "pull_request" \ "head" \ "sha").as[String]
 
-  "we" must {
-    "setup stuff" in {
-      testRepo1
-      testRepo2
-      testRepo3
-      testFork
-      testOrgRepo
-      testPullRequests
+  lazy val testUnknownPullRequest = Json.obj("pull_request" -> createTestUnknownPullRequest())
+  lazy val testUnknownPullRequestOwnerRepo = (testUnknownPullRequest \ "pull_request" \ "base" \ "repo").as[OwnerRepo]
+  lazy val testUnknownPullRequestNum = (testUnknownPullRequest \ "pull_request" \ "number").as[Int]
+  lazy val testUnknownPullRequestSha = (testUnknownPullRequest \ "pull_request" \ "head" \ "sha").as[String]
+
+  override def beforeAll() = {
+    testRepo1
+    testRepo2
+    testRepo3
+    testFork
+    testOrgRepo
+    testPullRequests
+
+    withClue(s"$testLogin2 must not be a collaborator on $testRepo1: ") {
+      val testRepo1Collaborators = await(gitHub.collaborators(testRepo1, testToken1))
+      testRepo1Collaborators must not contain User(testLogin2)
     }
-    "verify the test structure" in {
-      withClue(s"$testLogin2 must not be a collaborator on $testRepo1: ") {
-        val testRepo1Collaborators = await(gitHub.collaborators(testRepo1, testToken1))
-        testRepo1Collaborators must not contain GitHub.GitHubUser(testLogin2)
-      }
 
-      withClue(s"$testLogin2 must be a private member of $testOrg: ") {
-        val allOrgMembers = await(gitHub.orgMembers(testOrg, testToken1))
-        allOrgMembers.value.exists(_.\("login").as[String] == testLogin2) must be (true)
-        val publicOrgMembers = await(gitHub.orgMembers(testOrg, testIntegrationToken))
-        publicOrgMembers.value.exists(_.\("login").as[String] == testLogin2) must be (false)
-      }
+    withClue(s"$testLogin2 must be a private member of $testOrg: ") {
+      val allOrgMembers = await(gitHub.orgMembers(testOrg, testToken1))
+      allOrgMembers.value.exists(_.\("login").as[String] == testLogin2) must be (true)
+      val publicOrgMembers = await(gitHub.orgMembers(testOrg, testIntegrationToken))
+      publicOrgMembers.value.exists(_.\("login").as[String] == testLogin2) must be (false)
+    }
 
-      withClue(s"the integration must be installed on $testOrg: ") {
-        val integrationInstallations = await(gitHub.integrationInstallations())
-        integrationInstallations.value.exists(_.\("account").\("login").as[String] == testOrg) must be (true)
-      }
+    withClue(s"the integration must be installed on $testOrg: ") {
+      val integrationInstallations = await(gitHub.integrationInstallations())
+      integrationInstallations.value.exists(_.\("account").\("login").as[String] == testOrg) must be (true)
+    }
 
-      withClue(s"the integration must be installed on $testLogin1: ") {
-        val integrationInstallations = await(gitHub.integrationInstallations())
-        integrationInstallations.value.exists(_.\("account").\("login").as[String] == testLogin1) must be (true)
-      }
+    withClue(s"the integration must be installed on $testLogin1: ") {
+      val integrationInstallations = await(gitHub.integrationInstallations())
+      integrationInstallations.value.exists(_.\("account").\("login").as[String] == testLogin1) must be (true)
     }
   }
 
@@ -409,15 +439,15 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
   "GitHub.collaborators" must {
     "get the collaborators on a repo" in {
       val collaborators = await(gitHub.collaborators(testExternalPullRequestOwnerRepo, testToken1))
-      collaborators must contain (GitHub.GitHubUser(testLogin1))
+      collaborators must contain (User(testLogin1))
     }
     "work with the Integration" in {
       val collaborators = await(gitHub.collaborators(testRepo1, testIntegrationToken))
-      collaborators must contain (GitHub.GitHubUser(testLogin1))
+      collaborators must contain (User(testLogin1))
     }
     "see hidden collaborators via the Integration" in {
       val collaborators = await(gitHub.collaborators(testOrgRepo, testIntegrationTokenOrg))
-      collaborators must contain (GitHub.GitHubUser(testLogin2))
+      collaborators must contain (User(testLogin2))
     }
   }
 
@@ -521,31 +551,6 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
     }
   }
 
-  "GitHub.addOrgWebhook" must {
-    "create an org Webhook" in {
-      val status = await(gitHub.addOrgWebhook(testOrg, Seq("pull_request"), "http://localhost:9000/foobar", "json", testToken1))
-      (status \ "active").as[Boolean] must be (true)
-    }
-  }
-
-  "GitHub.orgWebhooks" must {
-    "get the org webhooks" in {
-      val webhooks = await(gitHub.orgWebhooks(testOrg, testToken1))
-      webhooks.value.exists(_.\("config").\("url").as[String] == "http://localhost:9000/foobar") must be (true)
-    }
-  }
-
-  "GitHub.addOrgWebhook" must {
-    "delete an org Webhook" in {
-      val webhooks = await(gitHub.orgWebhooks(testOrg, testToken1))
-      val deletes = webhooks.value.filter(_.\("config").\("url").as[String] == "http://localhost:9000/foobar").map { webhook =>
-        val hookId = (webhook \ "id").as[Int]
-        await(gitHub.deleteOrgWebhook(testOrg, hookId, testToken1))
-      }
-      deletes.size must be > 0
-    }
-  }
-
   "GitHub.userOrgMembership" must {
     "get the users org membership" in {
       val membership = await(gitHub.userOrgMembership(testOrg, testToken1))
@@ -635,11 +640,11 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
   "GitHub.pullRequestUserCommitters" must {
     "work" in {
       val pullRequestUserCommitters = await(gitHub.pullRequestUserCommitters(testInternalPullRequestOwnerRepo, testInternalPullRequestNum, testInternalPullRequestSha, testIntegrationToken))
-      pullRequestUserCommitters must equal (Set(GitHub.GitHubUser(testLogin1)))
+      pullRequestUserCommitters.map(_.asInstanceOf[User].username) must equal (Set(testLogin1))
     }
     "fail with non-github user contributors" in {
-      // todo: but hard to simulate
-      cancel()
+      val pullRequestUserCommitters = await(gitHub.pullRequestUserCommitters(testUnknownPullRequestOwnerRepo, testUnknownPullRequestNum, testUnknownPullRequestSha, testIntegrationToken))
+      pullRequestUserCommitters must equal (Set(unknownCommitter(testUnknownPullRequestOwnerRepo)))
     }
   }
 
@@ -660,6 +665,7 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
       }
 
       val validationResults = await(validationResultsFuture)
+
       validationResults.size must equal (1)
       (validationResults.head._3 \ "creator" \ "login").as[String].endsWith("[bot]") must be (true)
       (validationResults.head._3 \ "state").as[String] must equal ("success")
@@ -714,6 +720,28 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
       val issueComments = await(gitHub.issueComments(testExternalPullRequestOwnerRepo, testExternalPullRequestNum, testToken1))
       issueComments.value.count(_.\("user").\("login").as[String].endsWith("[bot]")) must equal (1)
     }
+    "comment for internal committer" in {
+      val pullRequestWithCommits = await(gitHub.pullRequestWithCommitsAndStatus(testToken1)((testExternalPullRequest \ "pull_request").as[JsObject]))
+
+      val commit = (pullRequestWithCommits \ "commits").as[Seq[JsObject]].head
+
+      val user = commit.as[Contributor].asInstanceOf[User]
+
+      val contributorDomain = user.maybeEmail.get.split("@").last
+
+      val instructionsUrl = "http://foo.com"
+
+      val config = app.configuration ++ Configuration(
+        "app.organization.domain" -> contributorDomain,
+        "app.organization.internal-instructions-url" -> instructionsUrl
+      )
+      val gitHubWithInternalConfig = new GitHub(config, wsClient, messagesApi)(ExecutionContext.global)
+
+      val externalPullRequestWithToken = Map(testExternalPullRequest -> testToken1)
+      await(gitHubWithInternalConfig.validatePullRequests(externalPullRequestWithToken, urlF, urlF)(_ => Future.successful(Set.empty[ClaSignature])))
+      val issueComments = await(gitHub.issueComments(testExternalPullRequestOwnerRepo, testExternalPullRequestNum, testToken1)).value.map(_.\("body").as[String])
+      issueComments.exists(_.contains(s"It looks like @${user.username} is an internal user")) must be (true)
+    }
   }
 
   "integrationAndUserOrgs" should {
@@ -725,10 +753,9 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
 
   "repoContributors" should {
     "work" in {
-      val repoContributors = await(gitHub.repoContributors(testOrgRepo, testIntegrationToken)).map(_.contributor)
-      val repoName = testOrgRepo.repo.toString
-      repoContributors contains GitHubUser(testLogin1)
-      repoContributors contains UnknownCommitter(Some(repoName), Some(s"$repoName@$repoName.com"))
+      val repoContributors = await(gitHub.repoContributors(testRepo1, testIntegrationToken)).map(_.contributor)
+      repoContributors contains User(testLogin1)
+      repoContributors contains unknownCommitter(testRepo1)
     }
   }
 
@@ -739,16 +766,16 @@ class GitHubSpec extends PlaySpec with GuiceOneAppPerSuite {
     }
   }
 
-  "we" must {
-    "cleanup" in {
-      if (sys.env.get("DO_NOT_CLEANUP").isEmpty) {
-        await(gitHub.deleteRepo(testFork)(testToken2))
-        await(gitHub.deleteRepo(testRepo1)(testToken1))
-        await(gitHub.deleteRepo(testRepo2)(testToken1))
-        await(gitHub.deleteRepo(testRepo3)(testToken1))
-        await(gitHub.deleteRepo(testOrgRepo)(testToken1))
-      }
+  override def afterAll() = {
+    if (sys.env.get("DO_NOT_CLEANUP").isEmpty) {
+      await(gitHub.deleteRepo(testFork)(testToken2))
+      await(gitHub.deleteRepo(testRepo1)(testToken1))
+      await(gitHub.deleteRepo(testRepo2)(testToken1))
+      await(gitHub.deleteRepo(testRepo3)(testToken1))
+      await(gitHub.deleteRepo(testOrgRepo)(testToken1))
     }
+
+    await(app.stop())
   }
 
 }

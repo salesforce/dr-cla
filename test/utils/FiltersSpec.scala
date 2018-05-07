@@ -8,8 +8,8 @@
 package utils
 
 import modules.{Database, DatabaseMock}
-import org.scalatestplus.play.guice.GuiceOneAppPerTest
 import org.scalatestplus.play.PlaySpec
+import org.scalatestplus.play.guice.GuiceOneAppPerTest
 import play.api.Mode
 import play.api.http.HeaderNames
 import play.api.inject._

@@ -10,7 +10,7 @@ package helpers
 import java.net.URL
 
 import javax.inject.Inject
-import play.api.{Configuration, Environment, Mode}
+import play.api.{Configuration, Environment}
 
 import scala.io.Source
 import scala.util.Try

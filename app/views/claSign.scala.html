@@ -41,7 +41,7 @@
                                         @maybeGitHubAuthInfo.fold {
                                             <a href="@authUrl" class="slds-button slds-button--brand">Login to GitHub</a>
                                         } { gitHubAuthInfo =>
-                                            Logged in as: @gitHubAuthInfo.gitHubUser.username
+                                            Logged in as: @gitHubAuthInfo.user.username
                                         }
                                     </p>
                                 </div>
@@ -107,10 +107,10 @@
                                             <input type="hidden" name="encGitHubToken" value="@gitHubAuthInfo.encAuthToken"/>
                                             <input type="hidden" name="claVersion" value="@claVersion"/>
                                             <div class="slds-form-element slds-is-required">
-                                                <input id="fullName" name="fullName" class="slds-input slds-size--1-of-2" type="text" placeholder="Full Name" value="@gitHubAuthInfo.maybeFullName.getOrElse("")" required/>
+                                                <input id="fullName" name="fullName" class="slds-input slds-size--1-of-2" type="text" placeholder="Full Name" value="@gitHubAuthInfo.user.maybeName.getOrElse("")" required/>
                                             </div>
                                             <div class="slds-form-element slds-is-required">
-                                                <input id="email" name="email" class="slds-input slds-size--1-of-2" type="email" placeholder="Email" value="@gitHubAuthInfo.maybeEmail.getOrElse("")" required/>
+                                                <input id="email" name="email" class="slds-input slds-size--1-of-2" type="email" placeholder="Email" value="@gitHubAuthInfo.user.maybeEmail.getOrElse("")" required/>
                                             </div>
                                             <div class="slds-form-element">
                                                 <label class="slds-checkbox" for="agree-to-cla">
