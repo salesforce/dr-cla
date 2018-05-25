@@ -50,10 +50,8 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   val gitHubBotName = configuration.get[String]("github.botname")
   val orgName = configuration.get[String]("app.organization.name")
 
-  val maybeDomainAndInstructionsUrl = (configuration.getOptional[String]("app.organization.domain"), configuration.getOptional[String]("app.organization.internal-instructions-url")) match {
-    case (Some(domain), Some(instructionsUrl)) => Some(domain, instructionsUrl)
-    case _ => None
-  }
+  val maybeDomain = configuration.getOptional[String]("app.organization.domain")
+  val maybeInstructionsUrl = configuration.getOptional[String]("app.organization.internal-instructions-url")
 
   val integrationKeyPair: KeyPair = {
     val privateKeyString = configuration.get[String]("github.integration.private-key")
@@ -623,76 +621,84 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     }
   }
 
+  def commentWithoutDuplicate(ownerRepo: OwnerRepo, prNumber: Int, accessToken: String)(message: String): Future[Option[JsValue]] = {
+    issueComments(ownerRepo, prNumber, accessToken).flatMap { comments =>
+      val alreadyCommented = comments.value.exists(_.\("body").as[String] == message)
+      if (!alreadyCommented) {
+        commentOnIssue(ownerRepo, prNumber, message, accessToken).map(Some(_))
+      }
+      else {
+        Future.successful(None)
+      }
+    }
+  }
+
+  def partitionContributorsInternalAndExternal[A <: Contributor](contributors: Set[A]): (Set[A], Set[A]) = {
+    contributors.partition { contributor =>
+      contributor.isInternal(maybeDomain)
+    }
+  }
+
   def missingClaComment(ownerRepo: OwnerRepo, prNumber: Int, sha: String, claUrl: String, users: Set[User], accessToken: String): Future[(Option[JsValue], Option[JsValue])] = {
     if (users.nonEmpty) {
-      issueComments(ownerRepo, prNumber, accessToken).flatMap { comments =>
+      val usersToString: Set[User] => String = _.map(_.username).mkString("@", " @", "")
 
-        def comment(message: String): Future[Option[JsValue]] = {
-          val alreadyCommented = comments.value.exists(_.\("body").as[String] == message)
-          if (!alreadyCommented) {
-            commentOnIssue(ownerRepo, prNumber, message, accessToken).map(Some(_))
-          }
-          else {
-            Future.successful(None)
-          }
+      val (internalUsers, externalUsers) = partitionContributorsInternalAndExternal(users)
+
+      val maybeInternalMessage = if (internalUsers.isEmpty) None else Some {
+        maybeInstructionsUrl.fold {
+          messagesApi("cla.missing.internal-no-instructions", usersToString(internalUsers))
+        } { instructionsUrl =>
+          messagesApi("cla.missing.internal-with-instructions", usersToString(internalUsers), instructionsUrl)
         }
-
-        val usersToString: Set[User] => String = _.map(_.username).mkString("@", " @", "")
-
-        def externalMessage(externalUsers: Set[User]) = messagesApi("cla.missing", usersToString(externalUsers), orgName,  claUrl)
-
-        val (maybeInternalMessage, maybeExternalMessage) = maybeDomainAndInstructionsUrl.fold[(Option[String], Option[String])] {
-          None -> Some(externalMessage(users))
-        } { case (domain, instructionsUrl) =>
-          val (internalUsers, externalUsers) = users.partition { user =>
-            user.maybeEmail.exists(_.endsWith(s"@$domain"))
-          }
-
-          val maybeInternalMessage = if (internalUsers.isEmpty) None else Some(messagesApi("cla.missing.internal", usersToString(internalUsers), instructionsUrl))
-          val maybeExternalMessage = if (externalUsers.isEmpty) None else Some(externalMessage(externalUsers))
-
-          maybeInternalMessage -> maybeExternalMessage
-        }
-
-        val internalUsersCommentFuture = maybeInternalMessage.map(comment).getOrElse(Future.successful(None))
-        val externalUsersCommentFuture = maybeExternalMessage.map(comment).getOrElse(Future.successful(None))
-
-        for {
-          internalUsersComment <- internalUsersCommentFuture
-          externalUsersComment <- externalUsersCommentFuture
-        } yield internalUsersComment -> externalUsersComment
       }
+
+      val maybeExternalMessage = if (externalUsers.isEmpty) None else Some {
+        messagesApi("cla.missing", usersToString(externalUsers), orgName, claUrl)
+      }
+
+      val internalUsersCommentFuture = maybeInternalMessage.map(commentWithoutDuplicate(ownerRepo, prNumber, accessToken)).getOrElse(Future.successful(None))
+      val externalUsersCommentFuture = maybeExternalMessage.map(commentWithoutDuplicate(ownerRepo, prNumber, accessToken)).getOrElse(Future.successful(None))
+
+      for {
+        internalUsersComment <- internalUsersCommentFuture
+        externalUsersComment <- externalUsersCommentFuture
+      } yield internalUsersComment -> externalUsersComment
     }
     else {
       Future.successful(None, None)
     }
   }
 
-  def authorLoginNotFoundComment(ownerRepo: OwnerRepo, prNumber: Int, claUrl: String, unknownCommitters: Set[UnknownCommitter], accessToken: String): Future[Option[JsValue]] = {
+  def authorLoginNotFoundComment(ownerRepo: OwnerRepo, prNumber: Int, claUrl: String, statusUrl: String, unknownCommitters: Set[UnknownCommitter], accessToken: String): Future[(Option[JsValue], Option[JsValue], Option[JsValue])] = {
     if (unknownCommitters.nonEmpty) {
-      val committers = unknownCommitters.flatMap(_.toStringOpt())
 
-      issueComments(ownerRepo, prNumber, accessToken).flatMap { comments =>
+      val (internalCommitters, externalCommitters) = partitionContributorsInternalAndExternal(unknownCommitters)
 
-        val message = if (committers.isEmpty) {
-          messagesApi("cla.author-not-found-without-name", orgName, claUrl)
-        }
-        else {
-          val names = committers.mkString(" ")
-          messagesApi("cla.author-not-found-with-name", names, orgName, claUrl)
-        }
+      val (externalCommittersWithEmail, externalCommittersNoEmail) = externalCommitters.partition(_.maybeEmail.isDefined)
 
-        val alreadyCommented = comments.value.exists(_.\("body").as[String] == message)
-        if (!alreadyCommented) {
-          commentOnIssue(ownerRepo, prNumber, message, accessToken).map(Some(_))
-        }
-        else {
-          Future.successful(None)
-        }
+      val committersToString: Set[UnknownCommitter] => String = _.flatMap(_.toStringOpt()).mkString(" ")
+
+      val maybeInternalMessage = if (internalCommitters.isEmpty) None else Some {
+        messagesApi("cla.author-not-found.internal", committersToString(internalCommitters), statusUrl)
       }
+
+      val maybeExternalCommittersWithEmailMessage = if (externalCommittersWithEmail.isEmpty) None else Some {
+        messagesApi("cla.author-not-found", committersToString(externalCommittersWithEmail), orgName, claUrl)
+      }
+
+      val maybeExternalCommittersNoEmail = if (externalCommittersNoEmail.isEmpty) None else Some {
+        messagesApi("cla.author-not-found.no-email")
+      }
+
+      for {
+        internalCommittersComment <- maybeInternalMessage.map(commentWithoutDuplicate(ownerRepo, prNumber, accessToken)).getOrElse(Future.successful(None))
+        externalCommittersWithEmailMessageComment <- maybeExternalCommittersWithEmailMessage.map(commentWithoutDuplicate(ownerRepo, prNumber, accessToken)).getOrElse(Future.successful(None))
+        externalCommittersNoEmailComment <- maybeExternalCommittersNoEmail.map(commentWithoutDuplicate(ownerRepo, prNumber, accessToken)).getOrElse(Future.successful(None))
+      } yield (internalCommittersComment, externalCommittersWithEmailMessageComment, externalCommittersNoEmailComment)
     }
     else {
-      Future.successful(None)
+      Future.successful((None, None, None))
     }
   }
 
@@ -714,14 +720,14 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     val (repo, prNumber) = pullRequestInfo(pullRequest)
     val sha = (pullRequest \ "pull_request" \ "head" \ "sha").as[String]
 
-    def addComment(users: Set[User], unknownCommitters: Set[UnknownCommitter]): Future[(Option[JsValue], Option[JsValue], Option[JsValue])] = {
+    def addComment(users: Set[User], unknownCommitters: Set[UnknownCommitter]): Future[(Option[JsValue], Option[JsValue], Option[JsValue], Option[JsValue], Option[JsValue])] = {
       val usersCommentFuture = missingClaComment(repo, prNumber, sha, claUrl, users, token)
-      val unknownCommittersCommentFuture = authorLoginNotFoundComment(repo, prNumber, claUrl, unknownCommitters, token)
+      val unknownCommittersCommentFuture = authorLoginNotFoundComment(repo, prNumber, claUrl, statusUrl, unknownCommitters, token)
 
       for {
         (internalUsersComment, externalUsersComment) <- usersCommentFuture
-        unknownCommittersComment <- unknownCommittersCommentFuture
-      } yield (internalUsersComment, externalUsersComment, unknownCommittersComment)
+        (internalCommittersComment, externalCommittersWithEmailMessageComment, externalCommittersNoEmailComment) <- unknownCommittersCommentFuture
+      } yield (internalUsersComment, externalUsersComment, internalCommittersComment, externalCommittersWithEmailMessageComment, externalCommittersNoEmailComment)
     }
 
     def updateStatus(users: Set[User], unknownCommitters: Set[UnknownCommitter]): Future[JsObject] = {
@@ -892,6 +898,9 @@ object GitHub {
   sealed trait Contributor {
     val maybeName: Option[String]
     val maybeEmail: Option[String]
+    def isInternal(maybeDomain: Option[String]): Boolean = maybeDomain.fold(false) { domain =>
+      maybeEmail.exists(_.endsWith(s"@$domain"))
+    }
   }
 
   case class User(username: String, maybeName: Option[String] = None, maybeEmail: Option[String] = None) extends Contributor {
