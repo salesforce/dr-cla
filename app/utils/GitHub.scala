@@ -67,8 +67,6 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
 
   val maybeIntegrationSecretToken = configuration.getOptional[String]("github.integration.secret-token")
 
-  val labels: Map[String, String] = Map(("cla:missing", "c40d0d"), ("cla:signed", "5ebc41"))
-
   def ws(path: String, accessToken: String): WSRequest = {
     ws
       .url(s"https://api.github.com/$path")
@@ -277,12 +275,12 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     ws(path, accessToken).get().flatMap(okT[JsArray])
   }
 
-  def updateLabel(ownerRepo: OwnerRepo, name: String, color: String, accessToken: String): Future[JsValue] = {
-    val path = s"repos/$ownerRepo/labels/$name"
+  def updateLabel(ownerRepo: OwnerRepo, label: Label, accessToken: String): Future[JsValue] = {
+    val path = s"repos/$ownerRepo/labels/${label.name}"
 
     val json = Json.obj(
-      "name" -> name,
-      "color" -> color
+      "name" -> label.name,
+      "color" -> label.color
     )
     ws(path, accessToken).patch(json).flatMap(okT[JsValue])
   }
@@ -292,17 +290,16 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     ws(path, accessToken).get().flatMap(okT[JsArray])
   }
 
-  def applyLabel(ownerRepo: OwnerRepo, name: String, issueNumber: Int, accessToken: String): Future[JsArray] = {
+  def applyLabel(ownerRepo: OwnerRepo, label: Label, issueNumber: Int, accessToken: String): Future[JsArray] = {
     val path = s"repos/$ownerRepo/issues/$issueNumber/labels"
-    val json =  Json.arr(name)
+    val json =  Json.arr(label.name)
     ws(path, accessToken).post(json).flatMap(okT[JsArray]).flatMap { jsArray =>
       // validate the label has the correct color
-      val maybeColor = jsArray.value.find(_.\("name").as[String] == name).map(_.\("color").as[String])
-      val maybeCorrectColor = labels.get(name)
+      val maybeColor = jsArray.value.find(_.\("name").as[String] == label.name).map(_.\("color").as[String])
 
-      (maybeColor, maybeCorrectColor) match {
-        case (Some(color), Some(correctColor)) if color != correctColor =>
-          updateLabel(ownerRepo, name, correctColor, accessToken).flatMap(_ => getIssueLabels(ownerRepo, issueNumber, accessToken))
+      maybeColor match {
+        case Some(color) if color != label.color =>
+          updateLabel(ownerRepo, label, accessToken).flatMap(_ => getIssueLabels(ownerRepo, issueNumber, accessToken))
         case _ =>
           Future.successful(jsArray)
       }
@@ -313,17 +310,17 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   // https://developer.github.com/v3/issues/labels/#remove-a-label-from-an-issue
   // Supposed to return Status: 204 No Content
   // but actually returns 200 : OK
-  def removeLabel(ownerRepo: OwnerRepo, name: String, issueNumber: Int, accessToken: String): Future[Unit] = {
-    val path = s"repos/$ownerRepo/issues/$issueNumber/labels/$name"
+  def removeLabel(ownerRepo: OwnerRepo, label: Label, issueNumber: Int, accessToken: String): Future[Unit] = {
+    val path = s"repos/$ownerRepo/issues/$issueNumber/labels/${label.name}"
     ws(path, accessToken).delete().flatMap(ok).map(_ => Unit)
   }
 
   // todo: do not re-apply an existing label
-  def toggleLabel(ownerRepo: OwnerRepo, newLabel: String, oldLabel: String, issueNumber: Int, accessToken: String): Future[Option[JsValue]] = {
+  def toggleLabel(ownerRepo: OwnerRepo, newLabel: Label, oldLabel: Label, issueNumber: Int, accessToken: String): Future[Option[JsValue]] = {
     getIssueLabels(ownerRepo, issueNumber, accessToken).flatMap { json =>
       val issueLabels = json.value.map(_.\("name").as[String])
 
-      val removeLabelFuture = if (issueLabels.contains(oldLabel)) {
+      val removeLabelFuture = if (issueLabels.contains(oldLabel.name)) {
         removeLabel(ownerRepo, oldLabel, issueNumber, accessToken)
       }
       else {
@@ -331,7 +328,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
       }
 
       removeLabelFuture.flatMap { _ =>
-        if (!issueLabels.contains(newLabel)) {
+        if (!issueLabels.contains(newLabel.name)) {
           applyLabel(ownerRepo, newLabel, issueNumber, accessToken).map(Some(_))
         }
         else {
@@ -705,14 +702,17 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   def updatePullRequestLabel(ownerRepo: OwnerRepo, prNumber: Int, hasExternalContributors: Boolean, hasMissingClas: Boolean, accessToken: String): Future[Option[JsValue]] = {
     if (hasExternalContributors) {
       if (hasMissingClas) {
-        toggleLabel(ownerRepo, "cla:missing", "cla:signed", prNumber, accessToken)
+        toggleLabel(ownerRepo, MissingLabel, SignedLabel, prNumber, accessToken)
       }
       else {
-        toggleLabel(ownerRepo, "cla:signed", "cla:missing", prNumber, accessToken)
+        toggleLabel(ownerRepo, SignedLabel, MissingLabel, prNumber, accessToken)
       }
     }
     else {
-      Future.successful(None)
+      // just in case there was a missing label on it
+      removeLabel(ownerRepo, MissingLabel, prNumber, accessToken).map(_ => None).recover {
+        case _: IncorrectResponseStatus => None
+      }
     }
   }
 
@@ -964,6 +964,29 @@ object GitHub {
       } { login =>
         (Reads.pure(login) ~ nameReads ~ emailReads)(User)
       }
+    }
+  }
+
+  sealed trait Label {
+    val name: String
+    val color: String
+  }
+
+  case object MissingLabel extends Label {
+    override val name: String = "cla:missing"
+    override val color: String = "c40d0d"
+  }
+
+  case object SignedLabel extends Label {
+    override val name: String = "cla:signed"
+    override val color: String = "5ebc41"
+  }
+
+  object Label {
+    def findByName(name: String): Option[Label] = {
+      if (name == MissingLabel.name) Some(MissingLabel)
+      else if (name == SignedLabel.name) Some(SignedLabel)
+      else None
     }
   }
 

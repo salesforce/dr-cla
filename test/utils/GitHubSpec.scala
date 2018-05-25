@@ -520,33 +520,27 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
 
   "GitHub.applyLabel" must {
     "apply a label to issue" in {
-      val appliedLabels = await(gitHub.applyLabel(testExternalPullRequestOwnerRepo, "foobar", testExternalPullRequestNum, testToken1))
-      appliedLabels.value.map(_.\("name").as[String]) must contain ("foobar")
-    }
-
-    "work with non-existant labels" in {
-      val appliedLabels = await(gitHub.applyLabel(testExternalPullRequestOwnerRepo, "asdfasdf", testExternalPullRequestNum, testToken1))
-      (appliedLabels.head.get \ "name").as[String] must equal ("asdfasdf")
+      val appliedLabels = await(gitHub.applyLabel(testExternalPullRequestOwnerRepo, MissingLabel, testExternalPullRequestNum, testToken1))
+      appliedLabels.value.map(_.\("name").as[String]) must contain (MissingLabel.name)
     }
 
     "have the right color" in {
-      val (labelName, labelColor) = gitHub.labels.head
-      val appliedLabels = await(gitHub.applyLabel(testExternalPullRequestOwnerRepo, labelName, testExternalPullRequestNum, testToken1))
-      val appliedLabel = appliedLabels.value.find(_.\("name").as[String] == labelName).get
-      (appliedLabel \ "color").as[String] must equal (labelColor)
+      val appliedLabels = await(gitHub.applyLabel(testExternalPullRequestOwnerRepo, MissingLabel, testExternalPullRequestNum, testToken1))
+      val appliedLabel = appliedLabels.value.find(_.\("name").as[String] == MissingLabel.name).get
+      (appliedLabel \ "color").as[String] must equal (MissingLabel.color)
     }
   }
 
   "GitHub.getIssueLabels" must {
     "get labels on an issue" in {
       val issueLabels = await(gitHub.getIssueLabels(testExternalPullRequestOwnerRepo, testExternalPullRequestNum, testToken1))
-      issueLabels.value.map(_.\("name").as[String]) must contain ("foobar")
+      issueLabels.value.map(_.\("name").as[String]) must contain (MissingLabel.name)
     }
   }
 
   "GitHub.removeLabel" must {
     "remove a label from issue" in {
-      val removedLabel = await(gitHub.removeLabel(testExternalPullRequestOwnerRepo, "foobar", testExternalPullRequestNum, testToken1))
+      val removedLabel = await(gitHub.removeLabel(testExternalPullRequestOwnerRepo, MissingLabel, testExternalPullRequestNum, testToken1))
       removedLabel must equal (())
     }
   }
