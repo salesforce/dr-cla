@@ -21,7 +21,7 @@ libraryDependencies ++= Seq(
   "org.postgresql"         %  "postgresql"                         % "42.1.4",
   "org.flywaydb"           %% "flyway-play"                        % "4.0.0",
 
-  "io.getquill"            %% "quill-async-postgres"               % "2.4.2",
+  "io.getquill"            %% "quill-async-postgres"               % "2.5.4",
 
   "org.webjars"            %% "webjars-play"                       % "2.6.3",
   "org.webjars"            %  "salesforce-lightning-design-system" % "2.4.1",
