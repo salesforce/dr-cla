@@ -305,19 +305,17 @@ class Application @Inject()
       clasForExternalContributors <- db.findClaSignaturesByGitHubIds(gitHubUsers)
     } yield {
 
-      val externalContributorsWithClas = allContributors.filter { contributorWithMetrics =>
-        externalContributors.contains(contributorWithMetrics.contributor)
-      } map { contributorWithMetrics =>
+      val (internalContributors, external) = allContributors.partition { case GitHub.ContributorWithMetrics(contributor, _) =>
+        collaborators.contains(contributor)
+      }
+
+      val externalContributorsWithClas = external.map { contributorWithMetrics =>
         contributorWithMetrics.contributor match {
           case gitHubUser: GitHub.User =>
             contributorWithMetrics -> clasForExternalContributors.find(_.contactGitHubId == gitHubUser.username)
           case _ =>
             contributorWithMetrics -> None
         }
-      }
-
-      val internalContributors = allContributors.filter { contributorWithMetrics =>
-        collaborators.contains(contributorWithMetrics.contributor)
       }
 
       (externalContributorsWithClas, internalContributors)

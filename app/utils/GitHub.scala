@@ -904,10 +904,12 @@ object GitHub {
   }
 
   case class User(username: String, maybeName: Option[String] = None, maybeEmail: Option[String] = None) extends Contributor {
-    override def equals(o: scala.Any): Boolean = o match {
-      case user: User => this.username == user.username
+    override def equals(o: Any): Boolean = o match {
+      case user: User => username == user.username
       case _ => false
     }
+
+    override def hashCode: Int = username.hashCode
   }
   case class UnknownCommitter(maybeName: Option[String], maybeEmail: Option[String]) extends Contributor {
 
