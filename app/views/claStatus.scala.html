@@ -7,7 +7,7 @@
 
 @import _root_.utils.GitHub
 
-@this(webJarsUtil: org.webjars.play.WebJarsUtil, main: main)
+@this(webJarsUtil: org.webjars.play.WebJarsUtil, gitHub: GitHub, main: main)
 
 @(ownerRepo: GitHub.OwnerRepo, prNum: Int, missingCla: Set[GitHub.Contributor], claUrl: String)
 
@@ -20,11 +20,26 @@
         @for(contributor <- missingCla) {
             <ul class="slds-list_dotted" style="margin-left: 25px;">
                 @contributor match {
-                    case gitHubUser: GitHub.User => {
+                    case gitHubUser: GitHub.User if gitHubUser.isInternal(gitHub.maybeDomain) => {
+                        <li class="slds-list__item">
+                            The GitHub user @partials.contributorIdentity(gitHubUser) looks like an internal user so signing the CLA is not required.
+                            @gitHub.maybeInstructionsUrl match {
+                                case Some(instructionsUrl) => {
+                                    However, <a href="@instructionsUrl">we need to confirm this</a>.
+                                }
+                                case None => {
+                                    However, they are not a member of this GitHub org so we can't confirm this.
+                                }
+                            }
+                        </li>
+                    }
+                    case gitHubUser: GitHub.User if !gitHubUser.isInternal(gitHub.maybeDomain) => {
                         <li class="slds-list__item">The GitHub user @partials.contributorIdentity(gitHubUser) needs to <a href="@claUrl">sign the CLA</a>.</li>
                     }
                     case unknownCommitter: GitHub.UnknownCommitter => {
-                        <li class="slds-list__itme">The contributor @partials.contributorIdentity(unknownCommitter) needs to <a href="https://help.github.com/articles/why-are-my-commits-linked-to-the-wrong-user/#commits-are-not-linked-to-any-user">associate their commits with their GitHub user</a> then check back here.</li>
+                        <li class="slds-list__itme">
+                            The contributor @partials.contributorIdentity(unknownCommitter) is not associated with a GitHub account but needs to be.  One possible solution is to <a href="https://github.com/settings/emails">add that email to your GitHub account</a>.  Alternatively you can <a href="https://help.github.com/articles/why-are-my-commits-linked-to-the-wrong-user/#commits-are-not-linked-to-any-user">change your commits to another email</a> and force push the change.  After doing either, check back here.
+                        </li>
                     }
                 }
             </ul>
