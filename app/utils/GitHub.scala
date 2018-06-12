@@ -157,53 +157,15 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     }
   }
 
-  // deals with pagination
-  private def userOrOrgRepos(userOrOrg: Either[String, String], accessToken: String, pageSize: Int): Future[JsArray] = {
-
-    val path = userOrOrg match {
-      case Left(_) => s"user/repos"
-      case Right(org) => s"orgs/$org/repos"
-    }
-
-    fetchPages(path, accessToken)
+  def userRepos(user: User, accessToken: String, pageSize: Int = 100): Future[Set[OwnerRepo]] = {
+    val path = s"user/repos"
+    fetchPages(path, accessToken).map(_.as[Set[OwnerRepo]])
   }
 
-  def userRepos(user: String, accessToken: String, pageSize: Int = 100): Future[JsArray] = {
-    userOrOrgRepos(Left(user), accessToken, pageSize)
-  }
-
-  def orgRepos(org: String, accessToken: String, pageSize: Int = 100): Future[JsArray] = {
-    userOrOrgRepos(Right(org), accessToken, pageSize)
-  }
-
-  def allRepos(accessToken: String): Future[JsArray] = {
-    for {
-      userInfo <- userInfo(accessToken)
-      userLogin = (userInfo \ "login").as[String]
-      userOrgs <- userOrgs(accessToken)
-      orgNames = userOrgs.value.map(_.\("login").as[String])
-      userRepos <- userRepos(userLogin, accessToken)
-      orgsRepos <- Future.sequence(orgNames.map(org => orgRepos(org, accessToken)))
-    } yield {
-      orgsRepos.fold(userRepos) { case (allRepos, orgRepo) =>
-        allRepos ++ orgRepo
-      }
-    }
-  }
-
-  def userOrgs(accessToken: String): Future[JsArray] = {
-    ws("user/orgs", accessToken).get().flatMap(okT[JsArray])
-  }
-
-  def userMembershipOrgs(maybeState: Option[String], accessToken: String): Future[JsArray] = {
-    val maybeParams = maybeState.map(state => Seq("state" -> state)).getOrElse(Seq.empty[(String, String)])
-    ws("user/memberships/orgs", accessToken).withQueryStringParameters(maybeParams:_*).get().flatMap(okT[JsArray])
-  }
-
-  def userInfo(accessToken: String): Future[JsValue] = {
+  def userInfo(accessToken: String): Future[User] = {
     ws("user", accessToken).get().flatMap { response =>
       response.status match {
-        case Status.OK => Future.successful(response.json)
+        case Status.OK => Future.successful(response.json.as[User])
         case _ => Future.failed(new Exception(response.body))
       }
     }
@@ -244,16 +206,6 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     val path = s"repos/$ownerRepo/pulls/$pullRequestNum/commits"
 
     ws(path, accessToken).get().flatMap(okT[JsArray])
-  }
-
-  def collaborators(ownerRepo: OwnerRepo, accessToken: String): Future[Set[Contributor]] = {
-    val path = s"repos/$ownerRepo/collaborators"
-
-    fetchPages(path, accessToken).map { collaborators =>
-      collaborators.value.map { json =>
-        User((json \ "login").as[String])
-      }.toSet
-    }
   }
 
   def commentOnIssue(ownerRepo: OwnerRepo, issueNumber: Int, body: String, accessToken: String): Future[JsValue] = {
@@ -338,26 +290,18 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     }
   }
 
-  def userOrgMembership(org: String, accessToken: String): Future[JsObject] = {
-    val path = s"user/memberships/orgs/$org"
-    ws(path, accessToken).get().flatMap(okT[JsObject])
+  def orgMembers(owner: Owner, accessToken: String): Future[Set[User]] = {
+    val path = s"orgs/$owner/members"
+    fetchPages(path, accessToken).map(_.as[Set[User]]).recoverWith {
+      case _ =>
+        // is this not an org?
+        user(owner, accessToken).map(Set(_))
+    }
   }
 
-  def orgMembers(org: String, accessToken: String): Future[JsArray] = {
-    val path = s"orgs/$org/members"
-    fetchPages(path, accessToken)
-  }
-
-  def orgMembersAdd(org: String, username: String, accessToken: String): Future[JsObject] = {
-    val path = s"orgs/$org/memberships/$username"
-    val json = Json.obj("role" -> "admin")
-    ws(path, accessToken).put(json).flatMap(okT[JsObject])
-  }
-
-  def activateOrgMembership(org: String, username: String, accessToken: String): Future[JsObject] = {
-    val path = s"user/memberships/orgs/$org"
-    val json = Json.obj("state" -> "active")
-    ws(path, accessToken).patch(json).flatMap(okT[JsObject])
+  def user(owner: Owner, accessToken: String): Future[User] = {
+    val path = s"users/$owner"
+    ws(path, accessToken).get().flatMap(okT[JsObject]).map(_.as[User])
   }
 
   def commit(ownerRepo: OwnerRepo, message: String, tree: String, parents: Set[String], maybeAuthor: Option[(String, String)], accessToken: String): Future[JsObject] = {
@@ -437,7 +381,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     fetchPagesWithExtractor(s"user/installations/$installationId/repositories", accessToken)(_.\("repositories").as[JsArray])
   }
 
-  def createRepo(name: String, maybeOrg: Option[String] = None, autoInit: Boolean = false)(accessToken: String): Future[JsObject] = {
+  def createRepo(name: String, maybeOrg: Option[Owner] = None, autoInit: Boolean = false)(accessToken: String): Future[OwnerRepo] = {
     val path = maybeOrg.fold("user/repos")(org => s"orgs/$org/repos")
 
     val json = Json.obj(
@@ -445,7 +389,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
       "auto_init" -> autoInit
     )
 
-    ws(path, accessToken).post(json).flatMap(createdT[JsObject])
+    ws(path, accessToken).post(json).flatMap(createdT[JsObject]).map(_.as[OwnerRepo])
   }
 
   def repo(ownerRepo: OwnerRepo)(accessToken: String): Future[JsObject] = {
@@ -496,10 +440,6 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     ws(s"repos/$ownerRepo/pulls/$number", accessToken).patch(json).flatMap(okT[JsObject])
   }
 
-  def addCollaborator(ownerRepo: OwnerRepo, username: String, accessToken: String): Future[Unit] = {
-    ws(s"repos/$ownerRepo/collaborators/$username", accessToken).execute(HttpVerbs.PUT).flatMap(nocontent).map(_ => Unit)
-  }
-
   def createBranch(ownerRepo: OwnerRepo, name: String, sha: String, accessToken: String): Future[JsObject] = {
     val json = Json.obj(
       "ref" -> s"refs/heads/$name",
@@ -509,11 +449,11 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     ws(s"repos/$ownerRepo/git/refs", accessToken).post(json).flatMap(createdT[JsObject])
   }
 
-  private def pullRequestHasContributorAndState(contributorId: String, state: String)(pullRequest: JsObject): Boolean = {
-    val contributors = (pullRequest \ "commits").as[JsArray].value.map(commitAuthor)
+  private def pullRequestHasContributorAndState(user: User, state: String)(pullRequest: JsObject): Boolean = {
+    val contributors = (pullRequest \ "commits").as[Set[Contributor]]
     val prState = (pullRequest \ "status" \ "state").as[String]
 
-    contributors.contains(contributorId) && (state == prState)
+    contributors.contains(user) && (state == prState)
   }
 
   def isOpenPullRequest(pullRequest: JsValue): Boolean = {
@@ -533,7 +473,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   }
 
   // todo: optimize this
-  private def pullRequestsNeedingValidationForAccessToken(signerGitHubId: String, repos: Seq[JsObject], accessToken: String): Future[Map[JsObject, String]] = {
+  private def pullRequestsNeedingValidationForAccessToken(signerGitHubId: User, repos: Seq[JsObject], accessToken: String): Future[Map[JsObject, String]] = {
     val repoNames = repos.map(_.as[OwnerRepo]).toSet
 
     for {
@@ -544,7 +484,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     }.toMap
   }
 
-  def pullRequestsToBeValidated(signerGitHubId: String): Future[Map[JsObject, String]] = {
+  def pullRequestsToBeValidated(signerGitHubId: User): Future[Map[JsObject, String]] = {
     def integrationTokens(integrationInstallationIds: Seq[Int]): Future[Seq[String]] = {
       Future.sequence {
         integrationInstallationIds.map { integrationInstallationId =>
@@ -600,12 +540,14 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
 
   def externalContributorsForPullRequest(ownerRepo: OwnerRepo, prNumber: Int, sha: String, accessToken: String): Future[Set[Contributor]] = {
     val pullRequestCommittersFuture = pullRequestUserCommitters(ownerRepo, prNumber, sha, accessToken)
-    val collaboratorsFuture = collaborators(ownerRepo, accessToken)
+
+    val orgMembersFuture = orgMembers(ownerRepo.owner, accessToken)
 
     for {
       pullRequestCommitters <- pullRequestCommittersFuture
-      collaborators <- collaboratorsFuture
-    } yield externalContributors(pullRequestCommitters, collaborators)
+      orgMembers <- orgMembersFuture
+    } yield externalContributors(pullRequestCommitters, orgMembers.toSet[Contributor])
+
   }
 
   def committersWithoutClas(externalContributors: Set[Contributor])(clasForCommitters: Set[Contributor] => Future[Set[ClaSignature]]): Future[Set[Contributor]] = {
@@ -765,40 +707,6 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     }
   }
 
-  def orgsWithRole(roles: Seq[String])(jsArray: JsArray): Seq[GitHub.Owner] = {
-    jsArray.value.filter(org => roles.contains(org.\("role").as[String])).map(_.as[GitHub.Owner])
-  }
-
-  def isOrgAdmin(owner: GitHub.Owner, accessToken: String): Future[Boolean] = {
-    userMembershipOrgs(Some("active"), accessToken).map { jsArray =>
-      val orgs = orgsWithRole(Seq("admin"))(jsArray)
-      orgs.contains(owner)
-    }
-  }
-
-  def integrationAndUserOrgs(userAccessToken: String): Future[Map[String, String]] = {
-    def orgIntegrationInstallationForUser(userOrgs: Seq[GitHub.Owner])(integrationInstallation: JsValue): Boolean = {
-      val isOrg = (integrationInstallation \ "account" \ "type").as[String] == "Organization"
-      val userHasAccess = userOrgs.exists(_.login == (integrationInstallation \ "account" \ "login").as[String])
-      isOrg && userHasAccess
-    }
-
-    def orgWithAccessToken(integrationInstallation: JsValue): Future[(String, String)] = {
-      val org = (integrationInstallation \ "account" \ "login").as[String]
-      val integrationInstallationId = (integrationInstallation \ "id").as[Int]
-      installationAccessTokens(integrationInstallationId).map { json =>
-        (org, (json \ "token").as[String])
-      }
-    }
-
-    for {
-      userOrgs <- userMembershipOrgs(Some("active"), userAccessToken).map(orgsWithRole(Seq("admin")))
-      integrationInstallations <- integrationInstallations()
-      integrationInstallationsForUser = integrationInstallations.value.filter(orgIntegrationInstallationForUser(userOrgs))
-      integrationAccessTokens <- Future.sequence(integrationInstallationsForUser.map(orgWithAccessToken))
-    } yield integrationAccessTokens.toMap
-  }
-
   private def ok(response: WSResponse): Future[WSResponse] = status(Status.OK, response)
 
   private def okT[T](response: WSResponse)(implicit r: Reads[T]): Future[T] = statusT[T](Status.OK, response)
@@ -837,15 +745,22 @@ object GitHub {
 
   type ValidationResult = (Set[GitHub.Contributor], Set[GitHub.Contributor], JsObject)
 
-  case class OwnerRepo(ownerRepo: String) {
-    assert(ownerRepo.split("/").length == 2)
-    lazy val owner = Owner(ownerRepo.split("/").head)
-    lazy val repo = Repo(ownerRepo.split("/").last)
-    override def toString: String = ownerRepo
+  case class OwnerRepo(owner: Owner, repo: Repo) {
+    override def toString: String = owner.name + "/" + repo.name
   }
 
   object OwnerRepo {
-    implicit val jsonReads: Reads[OwnerRepo] = (__ \ "full_name").read[String].map(OwnerRepo(_))
+    def apply(s: String): OwnerRepo = {
+      assert(s.split("/").length == 2)
+      lazy val owner = Owner(s.split("/").head)
+      lazy val repo = Repo(s.split("/").last)
+      OwnerRepo(owner, repo)
+    }
+
+    implicit val jsonReads: Reads[OwnerRepo] = (
+      (__ \ "owner").read[Owner] ~
+      Repo.jsonReads
+    )(OwnerRepo.apply(_, _))
 
     implicit val queryStringBindable: QueryStringBindable[OwnerRepo] = {
       QueryStringBindable.bindableString.transform(OwnerRepo(_), _.toString)
@@ -856,11 +771,9 @@ object GitHub {
     }
   }
 
-  case class Owner(login: String) {
-    override def toString: String = login
+  case class Owner(name: String) {
+    override def toString: String = name
   }
-
-  case class Repo(name: String)
 
   object Owner {
     implicit val jsonReads: Reads[Owner] = {
@@ -869,7 +782,15 @@ object GitHub {
         .orElse((__  \ "login").read[String])
         .map(Owner(_))
     }
-    implicit val jsonWrites: Writes[Owner] = Json.writes[Owner]
+    //implicit val jsonWrites: Writes[Owner] = Json.writes[Owner]
+  }
+
+  case class Repo(name: String) {
+    override def toString: String = name
+  }
+
+  object Repo {
+    implicit val jsonReads: Reads[Repo] = (__ \ "name").read[String].map(Repo(_))
   }
 
   def pullRequestInfo(prUrl: String): (OwnerRepo, Int) = {
@@ -911,6 +832,15 @@ object GitHub {
 
     override def hashCode: Int = username.hashCode
   }
+
+  object User {
+    implicit val jsonReads: Reads[User] = (
+      (__ \ "login").read[String] ~
+      (__ \ "name").readNullable[String] ~
+      (__ \ "email").readNullable[String]
+    )(User.apply(_, _, _))
+  }
+
   case class UnknownCommitter(maybeName: Option[String], maybeEmail: Option[String]) extends Contributor {
 
     def publicEmail(email: String): Option[String] = {
@@ -950,24 +880,25 @@ object GitHub {
     }
   }
 
+  object Contributor {
+    implicit val contributorReads: Reads[Contributor] = {
+      val nameReads = (__ \ "commit" \ "author" \ "name").readNullable[String]
+      val emailReads = (__ \ "commit" \ "author" \ "email").readNullable[String]
+      val loginReads = (__ \ "author" \ "login").readNullable[String]
+
+      loginReads.flatMap { maybeLogin =>
+        maybeLogin.fold[Reads[Contributor]] {
+          (nameReads ~ emailReads) (UnknownCommitter)
+        } { login =>
+          (Reads.pure(login) ~ nameReads ~ emailReads)(User.apply(_, _, _))
+        }
+      }
+    }
+  }
 
   case class AuthInfo(encAuthToken: String, user: User)
 
   case class ContributorWithMetrics(contributor: Contributor, numCommits: Int)
-
-  implicit val contributorReads: Reads[Contributor] = {
-    val nameReads = (__ \ "commit" \ "author" \ "name").readNullable[String]
-    val emailReads = (__ \ "commit" \ "author" \ "email").readNullable[String]
-    val loginReads = (__ \ "author" \ "login").readNullable[String]
-
-    loginReads.flatMap { maybeLogin =>
-      maybeLogin.fold[Reads[Contributor]] {
-        (nameReads ~ emailReads)(UnknownCommitter)
-      } { login =>
-        (Reads.pure(login) ~ nameReads ~ emailReads)(User)
-      }
-    }
-  }
 
   sealed trait Label {
     val name: String

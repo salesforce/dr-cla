@@ -7,9 +7,9 @@
 
 @this(webJarsUtil: org.webjars.play.WebJarsUtil, main: main)
 
-@(repos: Seq[_root_.utils.GitHub.OwnerRepo], encAccessToken: String)
+@(ownerRepos: Seq[_root_.utils.GitHub.OwnerRepo], encAccessToken: String)
 
-@repos.map { repo =>
+@ownerRepos.map { ownerRepo =>
     <div class="slds-media slds-tile">
         <div class="slds-media__figure">
             <div class="slds-icon_container slds-icon-standard-canvas">
@@ -18,10 +18,10 @@
         </div>
         <div class="slds-media__body">
             <div class="slds-grid slds-grid--align-spread slds-has-flexi-truncate">
-                <p class="slds-tile__title slds-truncate"><a href="https://github.com/@repo.ownerRepo">@repo.ownerRepo</a></p>
+                <p class="slds-tile__title slds-truncate"><a href="https://github.com/@ownerRepo">@ownerRepo</a></p>
             </div>
             <div class="slds-tile__detail slds-text-body--small">
-                <div data-href="@routes.Application.auditContributors(repo, encAccessToken)" data-autoload="false">
+                <div data-href="@routes.Application.auditContributors(ownerRepo, encAccessToken)" data-autoload="false">
                     <button class="slds-button slds-button--brand slds-button--small">
                         Load Contributor CLA Statuses
                         @webJarsUtil.locate("slds_spinner.gif").img(Map("alt" -> "Loading...", "class" -> "slds-button__icon slds-button__icon--right", "style" -> "height: 1rem; display: none;"))
@@ -32,6 +32,6 @@
     </div>
 }
 
-@if(repos.isEmpty) {
+@if(ownerRepos.isEmpty) {
     <p>This org does not have any public repos.</p>
 }

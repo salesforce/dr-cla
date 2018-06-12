@@ -50,26 +50,26 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
 
   val testToken1 = sys.env("GITHUB_TEST_TOKEN1")
   val testToken2 = sys.env("GITHUB_TEST_TOKEN2")
-  val testOrg = sys.env("GITHUB_TEST_ORG")
+  val testOrg = Owner(sys.env("GITHUB_TEST_ORG"))
 
-  lazy val testLogin1 = (await(gitHub.userInfo(testToken1)) \ "login").as[String]
-  lazy val testLogin2 = (await(gitHub.userInfo(testToken2)) \ "login").as[String]
+  lazy val testUser1 = await(gitHub.userInfo(testToken1))
+  lazy val testUser2 = await(gitHub.userInfo(testToken2))
 
   lazy val testIntegrationInstallationId: Int = {
     val integrationInstallations = await(gitHub.integrationInstallations())
 
     integrationInstallations.value.find { json =>
-      (json \ "account" \ "login").asOpt[String].contains(testLogin1)
+      (json \ "account" \ "login").asOpt[String].contains(testUser1.username)
     }.flatMap { json =>
       (json \ "id").asOpt[Int]
-    }.getOrElse(throw new IllegalStateException(s"$testLogin1 must have the integration ${gitHub.integrationId} installed"))
+    }.getOrElse(throw new IllegalStateException(s"$testUser1 must have the integration ${gitHub.integrationId} installed"))
   }
 
   lazy val testIntegrationInstallationIdOrg: Int = {
     val integrationInstallations = await(gitHub.integrationInstallations())
 
     integrationInstallations.value.find { json =>
-      (json \ "account" \ "login").asOpt[String].contains(testOrg)
+      (json \ "account" \ "login").asOpt[String].contains(testOrg.name)
     }.flatMap { json =>
       (json \ "id").asOpt[Int]
     }.getOrElse(throw new IllegalStateException(s"$testOrg must have the integration ${gitHub.integrationId} installed"))
@@ -193,8 +193,7 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
 
   private def createRepo(): OwnerRepo = {
     val repoName = Random.alphanumeric.take(8).mkString
-    val createRepoResult = await(gitHub.createRepo(repoName, None, true)(testToken1))
-    val ownerRepo = createRepoResult.as[OwnerRepo]
+    val ownerRepo = await(gitHub.createRepo(repoName, None, true)(testToken1))
 
     waitForCommits(ownerRepo, testToken1)
     waitForCommits(ownerRepo, testToken2)
@@ -202,10 +201,9 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
     ownerRepo
   }
 
-  private def createOrgRepo(org: String): OwnerRepo = {
+  private def createOrgRepo(owner: Owner): OwnerRepo = {
     val repoName = Random.alphanumeric.take(8).mkString
-    val createRepoResult = await(gitHub.createRepo(repoName, Some(org), true)(testToken1))
-    val ownerRepo = createRepoResult.as[OwnerRepo]
+    val ownerRepo = await(gitHub.createRepo(repoName, Some(owner), true)(testToken1))
 
     waitForCommits(ownerRepo, testToken1)
     waitForCommits(ownerRepo, testToken2)
@@ -240,10 +238,10 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
   }
 
   def createTestExternalPullRequest() = {
-    val testRepos2 = await(gitHub.userRepos(testLogin2, testToken2))
+    val testRepos2 = await(gitHub.userRepos(testUser2, testToken2))
 
     // make sure testToken2 does not have access to the upstream repo
-    testRepos2.value.find(_.asOpt[OwnerRepo].contains(testRepo1)) must be (None)
+    testRepos2 must not contain (testRepo1)
 
     val readme = await(gitHub.getFile(testFork, "README.md")(testToken2))
 
@@ -270,7 +268,7 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
     waitForCommit(testFork, editSha, testToken2)
 
     // testToken2 create PR to testRepo1
-    val externalPullRequest = await(gitHub.createPullRequest(testRepo1, "Updates", s"$testLogin2:master", "master", testToken2))
+    val externalPullRequest = await(gitHub.createPullRequest(testRepo1, "Updates", s"${testUser2.username}:master", "master", testToken2))
     (externalPullRequest \ "id").asOpt[Int] must be ('defined)
     val prNumber = (externalPullRequest \ "number").as[Int]
     waitForPullRequest(testRepo1, prNumber, testToken1)
@@ -365,49 +363,49 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
     testOrgRepo
     testPullRequests
 
-    withClue(s"$testLogin2 must not be a collaborator on $testRepo1: ") {
-      val testRepo1Collaborators = await(gitHub.collaborators(testRepo1, testToken1))
-      testRepo1Collaborators must not contain User(testLogin2)
+    withClue(s"$testUser2 must not be a member on $testRepo1: ") {
+      val testRepo1Collaborators = await(gitHub.orgMembers(testRepo1.owner, testToken1))
+      testRepo1Collaborators must not contain testUser2
     }
 
-    withClue(s"$testLogin2 must be a private member of $testOrg: ") {
+    withClue(s"$testUser2 must be a private member of $testOrg: ") {
       val allOrgMembers = await(gitHub.orgMembers(testOrg, testToken1))
-      allOrgMembers.value.exists(_.\("login").as[String] == testLogin2) must be (true)
+      allOrgMembers must contain (testUser2)
       val publicOrgMembers = await(gitHub.orgMembers(testOrg, testIntegrationToken))
-      publicOrgMembers.value.exists(_.\("login").as[String] == testLogin2) must be (false)
+      publicOrgMembers must not contain testUser2
     }
 
     withClue(s"the integration must be installed on $testOrg: ") {
       val integrationInstallations = await(gitHub.integrationInstallations())
-      integrationInstallations.value.exists(_.\("account").\("login").as[String] == testOrg) must be (true)
+      integrationInstallations.as[Seq[JsObject]].map(_.\("account").as[Owner]) must contain (testOrg)
     }
 
-    withClue(s"the integration must be installed on $testLogin1: ") {
+    withClue(s"the integration must be installed on $testUser1: ") {
       val integrationInstallations = await(gitHub.integrationInstallations())
-      integrationInstallations.value.exists(_.\("account").\("login").as[String] == testLogin1) must be (true)
+      integrationInstallations.as[Seq[JsObject]].map(_.\("account").as[User]) must contain (testUser1)
     }
   }
 
   "GitHub.userRepos" must {
     "fetch all the repos with 10 pages" in {
       (testRepo1, testRepo2, testRepo3) // create 3 repos lazily
-      val repos = await(gitHub.userRepos(testLogin1, testToken1, 1))
-      repos.value.length must be >= 3
+      val repos = await(gitHub.userRepos(testUser1, testToken1, 1))
+      repos.size must be >= 3
     }
     "fetch all the repos without paging" in {
-      val repos = await(gitHub.userRepos(testLogin1, testToken1, Int.MaxValue))
-      repos.value.length must be >= 3
+      val repos = await(gitHub.userRepos(testUser1, testToken1, Int.MaxValue))
+      repos.size must be >= 3
     }
     "fetch all the repos with 2 pages" in {
-      val repos = await(gitHub.userRepos(testLogin1, testToken1, 2))
-      repos.value.length must be >= 3
+      val repos = await(gitHub.userRepos(testUser1, testToken1, 2))
+      repos.size must be >= 3
     }
   }
 
   "GitHub.userInfo" must {
     "fetch the userInfo" in {
-      val userInfo = await(gitHub.userInfo(testToken1))
-      (userInfo \ "login").asOpt[String] must contain (testLogin1)
+      val user = await(gitHub.userInfo(testToken1))
+      user must equal (testUser1)
     }
   }
 
@@ -436,44 +434,10 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
     }
   }
 
-  "GitHub.collaborators" must {
-    "get the collaborators on a repo" in {
-      val collaborators = await(gitHub.collaborators(testExternalPullRequestOwnerRepo, testToken1))
-      collaborators must contain (User(testLogin1))
-    }
-    "work with the Integration" in {
-      val collaborators = await(gitHub.collaborators(testRepo1, testIntegrationToken))
-      collaborators must contain (User(testLogin1))
-    }
-    "see hidden collaborators via the Integration" in {
-      val collaborators = await(gitHub.collaborators(testOrgRepo, testIntegrationTokenOrg))
-      collaborators must contain (User(testLogin2))
-    }
-  }
-
   "GitHub.commentOnIssue" must {
     "comment on an issue" in {
       val commentCreate = await(gitHub.commentOnIssue(testExternalPullRequestOwnerRepo, testExternalPullRequestNum, "This is only a test.", testToken1))
       (commentCreate \ "id").asOpt[Int] must be ('defined)
-    }
-  }
-
-  "GitHub.userOrgs" must {
-    "include the orgs" in {
-      val userOrgs = await(gitHub.userOrgs(testToken1))
-      userOrgs.value.map(_.\("login").as[String]) must contain (testOrg)
-    }
-  }
-
-  "GitHub.allRepos" must {
-    "include everything" in {
-      val repo = Random.alphanumeric.take(8).mkString
-      val ownerRepo = await(gitHub.createRepo(repo, Some(testOrg))(testToken1)).as[OwnerRepo]
-      waitForRepo(ownerRepo, testToken1)
-      val repos = await(gitHub.allRepos(testToken1))
-      repos.value.map(_.as[OwnerRepo]) must contain (ownerRepo)
-      val deleteResult = await(gitHub.deleteRepo(ownerRepo)(testToken1))
-      deleteResult must equal (())
     }
   }
 
@@ -545,17 +509,10 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
     }
   }
 
-  "GitHub.userOrgMembership" must {
-    "get the users org membership" in {
-      val membership = await(gitHub.userOrgMembership(testOrg, testToken1))
-      (membership \ "role").asOpt[String] must be ('defined)
-    }
-  }
-
   "GitHub.orgMembers" must {
     "get the org members" in {
       val members = await(gitHub.orgMembers(testOrg, testToken1))
-      members.value.length must be > 0
+      members.size must be > 0
     }
   }
 
@@ -612,7 +569,7 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
     lazy val number = (pullRequest \ "number").as[Int]
 
     "work" in {
-      val pullRequestsToBeValidated = await(gitHub.pullRequestsToBeValidated(testLogin1))
+      val pullRequestsToBeValidated = await(gitHub.pullRequestsToBeValidated(testUser1))
       pullRequestsToBeValidated must be (empty)
     }
     "include failure state pull requests" in {
@@ -620,13 +577,13 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
 
       waitForCommitState(testRepo1, sha, "failure", testToken1)
 
-      val pullRequestsToBeValidated = await(gitHub.pullRequestsToBeValidated(testLogin1))
+      val pullRequestsToBeValidated = await(gitHub.pullRequestsToBeValidated(testUser1))
       pullRequestsToBeValidated must not be empty
     }
     "not include closed pull requests" in {
       await(gitHub.closePullRequest(testRepo1, number, testToken1))
 
-      val pullRequestsToBeValidatedPostClose = await(gitHub.pullRequestsToBeValidated(testLogin1))
+      val pullRequestsToBeValidatedPostClose = await(gitHub.pullRequestsToBeValidated(testUser1))
       pullRequestsToBeValidatedPostClose must be (empty)
     }
   }
@@ -634,7 +591,7 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
   "GitHub.pullRequestUserCommitters" must {
     "work" in {
       val pullRequestUserCommitters = await(gitHub.pullRequestUserCommitters(testInternalPullRequestOwnerRepo, testInternalPullRequestNum, testInternalPullRequestSha, testIntegrationToken))
-      pullRequestUserCommitters.map(_.asInstanceOf[User].username) must equal (Set(testLogin1))
+      pullRequestUserCommitters must contain (testUser1)
     }
     "fail with non-github user contributors" in {
       val pullRequestUserCommitters = await(gitHub.pullRequestUserCommitters(testUnknownPullRequestOwnerRepo, testUnknownPullRequestNum, testUnknownPullRequestSha, testIntegrationToken))
@@ -674,7 +631,7 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
       val pullRequestsViaIntegration = Map(testExternalPullRequest -> testIntegrationToken)
 
       val validationResultsFuture = gitHub.validatePullRequests(pullRequestsViaIntegration, urlF, urlF) { _ =>
-        Future.successful(Set(ClaSignature(1, testLogin2, LocalDateTime.now(), "1.0")))
+        Future.successful(Set(ClaSignature(1, testUser2.username, LocalDateTime.now(), "1.0")))
       }
 
       val validationResults = await(validationResultsFuture)
@@ -738,17 +695,10 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
     }
   }
 
-  "integrationAndUserOrgs" should {
-    "work" in {
-      val integrationAndUserOrgs = await(gitHub.integrationAndUserOrgs(testToken1))
-      integrationAndUserOrgs.get(testOrg) must be ('defined)
-    }
-  }
-
   "repoContributors" should {
     "work" in {
       val repoContributors = await(gitHub.repoContributors(testRepo1, testIntegrationToken)).map(_.contributor)
-      repoContributors contains User(testLogin1)
+      repoContributors contains testUser1
       repoContributors contains unknownCommitter(testRepo1)
     }
   }

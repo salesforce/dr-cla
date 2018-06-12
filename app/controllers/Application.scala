@@ -111,15 +111,14 @@ class Application @Inject()
           val gitHubToken = crypto.decryptAES(encGitHubToken)
 
           for {
-            userInfo <- gitHub.userInfo(gitHubToken)
-            username = (userInfo \ "login").as[String]
-            authInfo = GitHub.AuthInfo(encGitHubToken, GitHub.User(username, Some(fullName), Some(email)))
+            user <- gitHub.userInfo(gitHubToken)
+            authInfo = GitHub.AuthInfo(encGitHubToken, user)
 
-            maybeContact <- db.findContactByGitHubId(username)
+            maybeContact <- db.findContactByGitHubId(user.username)
             contact <- maybeContact.fold {
-              db.createContact(Contact(-1, maybeFirstName, lastName, email, username))
+              db.createContact(Contact(-1, maybeFirstName, lastName, email, user.username))
             } (Future.successful)
-            existingClaSignatures <- db.findClaSignaturesByGitHubIds(Set(GitHub.User(username)))
+            existingClaSignatures <- db.findClaSignaturesByGitHubIds(Set(user))
             claSignature <- existingClaSignatures.headOption.fold {
               Future.successful(ClaSignature(-1, contact.gitHubId, LocalDateTime.now(), claVersion))
             } { existingClaSignature =>
@@ -137,7 +136,7 @@ class Application @Inject()
       def validatePullRequestOrRequests(claSignature: ClaSignature, authInfo: GitHub.AuthInfo): Future[Unit] = {
         maybePrUrl.fold {
           // do not block on this
-          revalidatePullRequests(claSignature.contactGitHubId).failed.foreach { e =>
+          revalidatePullRequests(authInfo.user).failed.foreach { e =>
             Logger.error("Could not revalidate PRs", e)
           }
 
@@ -294,19 +293,22 @@ class Application @Inject()
   def auditContributors(ownerRepo: GitHub.OwnerRepo, encAccessToken: String) = Action.async { implicit request =>
     val accessToken = crypto.decryptAES(encAccessToken)
 
-    val collaboratorsFuture = gitHub.collaborators(ownerRepo, accessToken)
+    val orgMembersFuture = gitHub.orgMembers(ownerRepo.owner, accessToken)
     val allContributorsFuture = gitHub.repoContributors(ownerRepo, accessToken)
 
     val future = for {
-      collaborators <- collaboratorsFuture
+      orgMembers <- orgMembersFuture
       allContributors <- allContributorsFuture
-      externalContributors = gitHub.externalContributors(allContributors.map(_.contributor), collaborators)
+      externalContributors = gitHub.externalContributors(allContributors.map(_.contributor), orgMembers.toSet[GitHub.Contributor])
       gitHubUsers = externalContributors.collect { case gitHubUser: GitHub.User => gitHubUser }
       clasForExternalContributors <- db.findClaSignaturesByGitHubIds(gitHubUsers)
     } yield {
 
       val (internalContributors, external) = allContributors.partition { case GitHub.ContributorWithMetrics(contributor, _) =>
-        collaborators.contains(contributor)
+        contributor match {
+          case user: GitHub.User => orgMembers.contains(user)
+          case _ => false
+        }
       }
 
       val externalContributorsWithClas = external.map { contributorWithMetrics =>
@@ -361,11 +363,8 @@ class Application @Inject()
       Future.successful[Option[GitHub.AuthInfo]](None)
     } { encAccessToken =>
       val accessToken = crypto.decryptAES(encAccessToken)
-      gitHub.userInfo(accessToken).map { userInfo =>
-        val username = (userInfo \ "login").as[String]
-        val maybeFullName = (userInfo \ "name").asOpt[String]
-        val maybeEmail = (userInfo \ "email").asOpt[String]
-        Some(GitHub.AuthInfo(encAccessToken, GitHub.User(username, maybeFullName, maybeEmail)))
+      gitHub.userInfo(accessToken).map { user =>
+        Some(GitHub.AuthInfo(encAccessToken, user))
       }
     }
   }
@@ -392,9 +391,9 @@ class Application @Inject()
 
   // When someone signs the CLA we don't know what PR we need to update.
   // So get all the PRs we have access to, that have the contributor which just signed the CLA and where the status is failed.
-  private def revalidatePullRequests(signerGitHubId: String)(implicit request: RequestHeader): Future[Iterable[GitHub.ValidationResult]] = {
+  private def revalidatePullRequests(signerGitHub: GitHub.User)(implicit request: RequestHeader): Future[Iterable[GitHub.ValidationResult]] = {
     for {
-      pullRequestsToBeValidated <- gitHub.pullRequestsToBeValidated(signerGitHubId)
+      pullRequestsToBeValidated <- gitHub.pullRequestsToBeValidated(signerGitHub)
       validation <- validatePullRequests(pullRequestsToBeValidated)
     } yield validation
   }
