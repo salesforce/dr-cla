@@ -65,6 +65,16 @@ headerSources.in(Compile) ++= sources.in(Compile, TwirlKeys.compileTemplates).va
 // classpath resources do not need headers
 includeFilter.in(headerResources) := NothingFilter
 
+
 // license report stuff
 
 licenseConfigurations := Set("runtime")
+
+
+// turn off doc stuff
+
+publishArtifact in (Compile, packageDoc) := false
+
+publishArtifact in packageDoc := false
+
+sources in (Compile, doc) := Seq.empty
