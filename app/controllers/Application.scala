@@ -418,10 +418,10 @@ class Application @Inject()
             maybeRepo.fold(Future.failed[GitHub.ValidationResult](new Exception(s"GitHub App not enabled on $ownerRepo"))) { repoJson =>
               val isPrivate = (repoJson \ "private").as[Boolean]
 
-              def getAndValidatePullRequest(accessToken: String): Future[GitHub.ValidationResult] = {
-                gitHub.getPullRequest(ownerRepo, prNum, accessToken).flatMap { pullRequest =>
-                  gitHub.pullRequestWithCommitsAndStatus(accessToken)(pullRequest).flatMap { pullRequestDetails =>
-                    validatePullRequest(pullRequestDetails, accessToken)
+              def getAndValidatePullRequest(fetchAccessToken: String): Future[GitHub.ValidationResult] = {
+                gitHub.getPullRequest(ownerRepo, prNum, fetchAccessToken).flatMap { pullRequest =>
+                  gitHub.pullRequestWithCommitsAndStatus(fetchAccessToken)(pullRequest).flatMap { pullRequestDetails =>
+                    validatePullRequest(pullRequestDetails, installationAccessToken)
                   }
                 }
               }
