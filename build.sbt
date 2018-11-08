@@ -5,7 +5,7 @@ lazy val root = project.in(file(".")).enablePlugins(PlayScala, ForcePlugin, Auto
 
 name := "dr-cla"
 
-scalaVersion := "2.12.6"
+scalaVersion := "2.12.7"
 
 resolvers ++= Seq(Resolver.mavenLocal, Resolver.jcenterRepo)
 
@@ -16,7 +16,7 @@ libraryDependencies ++= Seq(
 
   "com.fasterxml.jackson.core" % "jackson-databind"                % "2.8.10",
 
-  "com.pauldijou"          %% "jwt-play-json"                      % "0.16.0",
+  "com.pauldijou"          %% "jwt-play-json"                      % "0.19.0",
 
   "org.postgresql"         %  "postgresql"                         % "42.1.4",
   "org.flywaydb"           %% "flyway-play"                        % "4.0.0",
