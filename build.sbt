@@ -14,7 +14,12 @@ libraryDependencies ++= Seq(
   ws,
   filters,
 
-  "com.fasterxml.jackson.core" % "jackson-databind"                % "2.8.10",
+  "com.fasterxml.jackson.core" % "jackson-core"                    % "2.9.7",
+  "com.fasterxml.jackson.core" % "jackson-annotations"             % "2.9.7",
+  "com.fasterxml.jackson.core" % "jackson-databind"                % "2.9.7",
+
+  "org.apache.commons"     %  "commons-compress"                   % "1.18",
+  "com.google.guava"       %  "guava"                              % "27.0-jre",
 
   "com.pauldijou"          %% "jwt-play-json"                      % "0.19.0",
 
