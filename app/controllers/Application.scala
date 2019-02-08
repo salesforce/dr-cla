@@ -57,23 +57,23 @@ class Application @Inject()
     }
   }
 
-  def gitHubAppOauthCallback(code: String, state: String) = Action.async { request =>
+  def gitHubAppOauthCallback(code: String, state: String) = Action.async { implicit request =>
     gitHub.accessToken(code, gitHub.integrationClientId, gitHub.integrationClientSecret).map { accessToken =>
       val encAccessToken = crypto.encryptAES(accessToken)
-      Redirect(safeRedirectUrl(state)(request)).flashing("encAccessToken" -> encAccessToken)
+      Redirect(safeRedirectUrl(state)).flashing("encAccessToken" -> encAccessToken)
     } recover {
-      case e: utils.UnauthorizedError => Redirect(safeRedirectUrl(state)(request)).flashing("error" -> e.getMessage)
+      case e: utils.UnauthorizedError => Redirect(safeRedirectUrl(state)).flashing("error" -> e.getMessage)
       case e: Exception => InternalServerError(e.getMessage)
     }
   }
 
   // state is used for the URL to redirect to
-  def gitHubOauthCallback(code: String, state: String) = Action.async { request =>
+  def gitHubOauthCallback(code: String, state: String) = Action.async { implicit request =>
     gitHub.accessToken(code, gitHub.clientId, gitHub.clientSecret).map { accessToken =>
       val encAccessToken = crypto.encryptAES(accessToken)
-      Redirect(safeRedirectUrl(state)(request)).flashing("encAccessToken" -> encAccessToken)
+      Redirect(safeRedirectUrl(state)).flashing("encAccessToken" -> encAccessToken)
     } recover {
-      case e: utils.UnauthorizedError => Redirect(safeRedirectUrl(state)(request)).flashing("error" -> e.getMessage)
+      case e: utils.UnauthorizedError => Redirect(safeRedirectUrl(state)).flashing("error" -> e.getMessage)
       case e: Exception => InternalServerError(e.getMessage)
     }
   }
