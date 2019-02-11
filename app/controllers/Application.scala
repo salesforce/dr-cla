@@ -469,7 +469,7 @@ class Application @Inject()
   private def safeRedirectUrl(state: String)(implicit request: RequestHeader): String = {
       // If passed in redirectUrl (state) is outside app domain, redirect to base sign-cla form instead
       // Needed to mitigate OWASP unvalidated redirects
-      val appUrl = new URL(routes.Application.signCla(Some("")).absoluteURL())
+      val appUrl = new URL(routes.Application.signCla(None).absoluteURL())
       val redirectUrl = new URL(state)
 
       if(redirectUrl.getHost() != appUrl.getHost()){
