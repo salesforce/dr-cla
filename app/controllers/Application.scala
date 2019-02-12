@@ -8,6 +8,7 @@
 package controllers
 
 import java.time.LocalDateTime
+import java.net.URL
 
 import akka.http.scaladsl.model.Uri
 import akka.http.scaladsl.model.Uri.Query
@@ -56,23 +57,23 @@ class Application @Inject()
     }
   }
 
-  def gitHubAppOauthCallback(code: String, state: String) = Action.async { request =>
+  def gitHubAppOauthCallback(code: String, state: String) = Action.async { implicit request =>
     gitHub.accessToken(code, gitHub.integrationClientId, gitHub.integrationClientSecret).map { accessToken =>
       val encAccessToken = crypto.encryptAES(accessToken)
-      Redirect(state).flashing("encAccessToken" -> encAccessToken)
+      Redirect(safeRedirectUrl(state)).flashing("encAccessToken" -> encAccessToken)
     } recover {
-      case e: utils.UnauthorizedError => Redirect(state).flashing("error" -> e.getMessage)
+      case e: utils.UnauthorizedError => Redirect(safeRedirectUrl(state)).flashing("error" -> e.getMessage)
       case e: Exception => InternalServerError(e.getMessage)
     }
   }
 
   // state is used for the URL to redirect to
-  def gitHubOauthCallback(code: String, state: String) = Action.async { request =>
+  def gitHubOauthCallback(code: String, state: String) = Action.async { implicit request =>
     gitHub.accessToken(code, gitHub.clientId, gitHub.clientSecret).map { accessToken =>
       val encAccessToken = crypto.encryptAES(accessToken)
-      Redirect(state).flashing("encAccessToken" -> encAccessToken)
+      Redirect(safeRedirectUrl(state)).flashing("encAccessToken" -> encAccessToken)
     } recover {
-      case e: utils.UnauthorizedError => Redirect(state).flashing("error" -> e.getMessage)
+      case e: utils.UnauthorizedError => Redirect(safeRedirectUrl(state)).flashing("error" -> e.getMessage)
       case e: Exception => InternalServerError(e.getMessage)
     }
   }
@@ -463,6 +464,20 @@ class Application @Inject()
 
   private def redirectUri(implicit request: RequestHeader): String = {
     routes.Application.gitHubOauthCallback("", "").absoluteURL(request.secure).stripSuffix("?code=&state=")
+  }
+
+  private def safeRedirectUrl(state: String)(implicit request: RequestHeader): String = {
+      // If passed in redirectUrl (state) is outside app domain, redirect to base sign-cla form instead
+      // Needed to mitigate OWASP unvalidated redirects
+      val appUrl = new URL(routes.Application.signCla(None).absoluteURL())
+      val redirectUrl = new URL(state)
+
+      if(redirectUrl.getHost() != appUrl.getHost()){
+        appUrl.toString()
+      }
+      else {
+        redirectUrl.toString()
+      }
   }
 
   case class AlreadyExistsException(claSignature: ClaSignature) extends Exception
