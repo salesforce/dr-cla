@@ -1,8 +1,9 @@
-DR CLA
-======
+# DoctoR-CLAw
+### Contributor License Agreement Tooling
+
 [![FOSSA Status](https://app.fossa.io/api/projects/custom%2B23%2Fgithub.com%2Fsalesforce%2Fdr-cla.svg?type=shield)](https://app.fossa.io/projects/custom%2B23%2Fgithub.com%2Fsalesforce%2Fdr-cla?ref=badge_shield)
 
-This is a set of tools for dealing with Contributor License Agreements for Open Source Salesforce projects.
+This is a set of tools for dealing with Contributor License Agreements for Open Source Salesforce projects. This repository is affectionately referred to as "Dr. Claw" after the Inspector Gadget villain.
 
 The tools provided are:
 - Pull Request CLA Verifier
