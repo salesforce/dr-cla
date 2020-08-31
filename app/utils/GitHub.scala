@@ -111,7 +111,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   }
 
   def installationAccessTokens(installationId: Int): Future[JsValue] = {
-    val (ws, claim) = jwtWs(s"installations/$installationId/access_tokens")
+    val (ws, claim) = jwtWs(s"app/installations/$installationId/access_tokens")
 
     ws.post(claim.toJsValue()).flatMap(created)
   }
