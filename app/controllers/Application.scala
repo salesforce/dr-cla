@@ -13,10 +13,13 @@ import java.net.URL
 import akka.http.scaladsl.model.Uri
 import akka.http.scaladsl.model.Uri.Query
 import javax.inject.Inject
+import javax.inject.Singleton
+
 import models._
 import org.apache.commons.codec.digest.HmacUtils
 import org.webjars.WebJarAssetLocator
 import org.webjars.play.WebJarsUtil
+import play.api.http.HttpErrorHandler
 import play.api.libs.json.{JsArray, JsObject, JsValue}
 import play.api.mvc.Results.EmptyContent
 import play.api.mvc._
@@ -484,4 +487,19 @@ class Application @Inject()
 
   case object NeedsAuth extends Exception
 
+
+  @Singleton
+  class ErrorHandler extends HttpErrorHandler {
+    def onClientError(request: RequestHeader, statusCode: Int, message: String): Future[Result] = {
+      Future.successful(
+        Status(statusCode)("A client error occurred: " + message)
+      )
+    }
+
+    def onServerError(request: RequestHeader, exception: Throwable): Future[Result] = {
+      Future.successful(
+        InternalServerError("A server error occurred: " + exception.getMessage)
+      )
+    }
+  }
 }
