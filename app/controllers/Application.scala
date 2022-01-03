@@ -13,8 +13,9 @@ import java.net.URL
 import akka.http.scaladsl.model.Uri
 import akka.http.scaladsl.model.Uri.Query
 import javax.inject.Inject
+/*
 import javax.inject.Singleton
-
+*/
 import models._
 import org.apache.commons.codec.digest.HmacUtils
 import org.webjars.WebJarAssetLocator
@@ -487,7 +488,7 @@ class Application @Inject()
 
   case object NeedsAuth extends Exception
 
-
+/*
   @Singleton
   class ErrorHandler extends HttpErrorHandler {
     def onClientError(request: RequestHeader, statusCode: Int, message: String): Future[Result] = {
@@ -502,4 +503,5 @@ class Application @Inject()
       )
     }
   }
+*/
 }
