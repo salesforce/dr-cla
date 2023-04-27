@@ -1,4 +1,4 @@
-libraryDependencies += "com.fasterxml.jackson.core" % "jackson-databind" % "2.8.10"
+libraryDependencies += "com.fasterxml.jackson.core" % "jackson-databind" % "2.9.8"
 
 addSbtPlugin("com.typesafe.play" % "sbt-plugin" % "2.6.20")
 
