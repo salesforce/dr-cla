@@ -845,9 +845,9 @@ object GitHub {
 
     def publicEmail(email: String): Option[String] = {
       def obfuscate(s: String): String = {
-        // No need for this. We're not exposing anything not already public
-        // s.take(1) + "***"
-        s
+        // No need for this. We're not exposing anything not already public. Be safe anyway
+        s.take(1) + "***"
+        // s
       }
 
       email.split("@") match {
