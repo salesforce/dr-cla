@@ -201,7 +201,7 @@ class Application @Inject()
     if (authorized) {
       val maybeEvent = request.headers.get("X-GitHub-Event")
 
-      if (maybeEvent.contains("pull_request")) {
+      if (maybeEvent.contains("pull_request") || maybeEvent.contains("issue_comment")) {
 
         val maybeAction = (request.body \ "action").asOpt[String]
 
@@ -214,7 +214,7 @@ class Application @Inject()
             }
           }
         } {
-          case "opened" | "reopened" | "synchronize" =>
+          case "opened" | "reopened" | "synchronize" | "created" | "edited" =>
             val installationId = (request.body \ "installation" \ "id").as[Int]
             val handlePullRequestFuture = for {
               token <- gitHub.installationAccessTokens(installationId).map(_.\("token").as[String])
