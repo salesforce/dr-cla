@@ -164,7 +164,7 @@ class Application @Inject()
         Logger.error("CLA could not be signed.", e)
         val baseErrorMessage = "Could not sign the CLA"
         val errorMessage = maybeOrgEmail.fold(baseErrorMessage) { orgEmail =>
-          baseErrorMessage + ", please contact" + orgEmail
+          baseErrorMessage + ", please contact: " + orgEmail
         }
         InternalServerError(errorMessage)
     }
