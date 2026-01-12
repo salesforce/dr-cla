@@ -77,19 +77,23 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   }
 
   def accessToken(code: String, oauthClientId: String, oauthClientSecret: String): Future[String] = {
-    val wsFuture = ws.url("https://github.com/login/oauth/access_token").withQueryStringParameters(
-      "client_id" -> oauthClientId,
-      "client_secret" -> oauthClientSecret,
-      "code" -> code
-    ).withHttpHeaders(HeaderNames.ACCEPT -> MimeTypes.JSON).execute(HttpVerbs.POST)
+    configuration.getOptional[String]("github.token") match {
+      case Some(token) => Future.successful(token)
+      case None =>
+        val wsFuture = ws.url("https://github.com/login/oauth/access_token").withQueryStringParameters(
+          "client_id" -> oauthClientId,
+          "client_secret" -> oauthClientSecret,
+          "code" -> code
+        ).withHttpHeaders(HeaderNames.ACCEPT -> MimeTypes.JSON).execute(HttpVerbs.POST)
 
-    wsFuture.flatMap { response =>
-      (response.json \ "access_token").asOpt[String].fold {
-        val maybeError = (response.json \ "error_description").asOpt[String]
-        Future.failed[String](UnauthorizedError(maybeError.getOrElse(response.body)))
-      } {
-        Future.successful
-      }
+        wsFuture.flatMap { response =>
+          (response.json \ "access_token").asOpt[String].fold {
+            val maybeError = (response.json \ "error_description").asOpt[String]
+            Future.failed[String](UnauthorizedError(maybeError.getOrElse(response.body)))
+          } {
+            Future.successful
+          }
+        }
     }
   }
 
