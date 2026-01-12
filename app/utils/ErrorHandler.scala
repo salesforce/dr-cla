@@ -10,6 +10,7 @@ package utils
 import javax.inject._
 import play.api.http.HttpErrorHandler
 import play.api.mvc._
+import play.api.mvc.Results._
 import play.api.{Configuration, Environment, Logger, Mode}
 import play.api.http.Status._
 import scala.concurrent.{ExecutionContext, Future}
