@@ -1,0 +1,50 @@
+@*
+ * Copyright (c) 2025, salesforce.com, inc.
+ * All rights reserved.
+ * SPDX-License-Identifier: BSD-3-Clause
+ * For full license text, see the LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause
+ *@
+
+@this(webJarsUtil: org.webjars.play.WebJarsUtil, viewHelper: helpers.ViewHelpers, main: main)
+
+@(userMessage: String, exceptionMessage: Option[String], stackTrace: Option[String], isDev: Boolean)
+
+@main("Error - " + viewHelper.organizationName) {
+    <div class="slds-box slds-theme--error slds-m-around--medium">
+        <div class="slds-media">
+            <div class="slds-media__figure">
+                <div class="slds-icon_container slds-icon-standard-error">
+                    <span class="slds-icon slds-icon--large octicon octicon-alert"></span>
+                </div>
+            </div>
+            <div class="slds-media__body">
+                <h1 class="slds-text-heading--large slds-m-bottom--small">Server Error</h1>
+                <p class="slds-text-body--regular">@userMessage</p>
+            </div>
+        </div>
+    </div>
+
+    @if(isDev && exceptionMessage.isDefined) {
+        <div class="slds-box slds-m-around--medium">
+            <h2 class="slds-text-heading--medium slds-m-bottom--small">Error Details (Development Mode)</h2>
+            <div class="slds-form-element">
+                <label class="slds-form-element__label">Exception Message:</label>
+                <div class="slds-form-element__control">
+                    <pre style="background-color: #f3f2f2; padding: 10px; border: 1px solid #dddbda;">@exceptionMessage.get</pre>
+                </div>
+            </div>
+            @if(stackTrace.isDefined) {
+                <div class="slds-form-element slds-m-top--medium">
+                    <label class="slds-form-element__label">Stack Trace:</label>
+                    <div class="slds-form-element__control">
+                        <pre style="background-color: #f3f2f2; padding: 10px; border: 1px solid #dddbda; max-height: 400px; overflow-y: auto;">@stackTrace.get</pre>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    <div class="slds-m-around--medium" style="text-align: center;">
+        <a href="@routes.Application.index" class="slds-button slds-button--neutral">Return to Home</a>
+    </div>
+}
