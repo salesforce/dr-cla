@@ -211,7 +211,7 @@ class Application @Inject()
           .orElse((request.body \ "issue" \ "repository" \ "private").asOpt[Boolean])
           .getOrElse(false)
 
-        if (isPrivate) {
+        if (isPrivate && !maybeHandlePrivate) {
           Future.successful(Ok("Skipping webhook for private repository"))
         } else {
           val maybeAction = (request.body \ "action").asOpt[String]
