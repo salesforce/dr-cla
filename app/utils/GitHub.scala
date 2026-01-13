@@ -91,7 +91,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
         Future.successful
       }
     }
-}
+  }
 
 
   def jwtEncode(claim: JwtClaim): String = {
