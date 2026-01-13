@@ -21,7 +21,7 @@ import org.apache.commons.codec.digest.HmacUtils
 import org.webjars.WebJarAssetLocator
 import org.webjars.play.WebJarsUtil
 import play.api.http.HttpErrorHandler
-import play.api.libs.json.{JsArray, JsObject, JsValue}
+import play.api.libs.json.{JsArray, JsObject, JsValue, Json}
 import play.api.mvc.Results.EmptyContent
 import play.api.mvc._
 import play.api.{Configuration, Environment, Logger}
@@ -446,6 +446,10 @@ class Application @Inject()
           }
         }
       }
+    }.recover {
+      case e: Exception =>
+        Logger.error(s"Error revalidating pull request $ownerRepo#$prNum", e)
+        (Set.empty[GitHub.Contributor], Set.empty[GitHub.Contributor], Json.obj())
     }
   }
 
