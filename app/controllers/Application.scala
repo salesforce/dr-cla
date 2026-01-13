@@ -199,35 +199,47 @@ class Application @Inject()
     }
 
     if (authorized) {
+      val maybeHandlePrivate = configuration.getOptional[String]("app.organization.handle-private").exists(_.trim.nonEmpty)
       val maybeEvent = request.headers.get("X-GitHub-Event")
 
       if (maybeEvent.contains("pull_request") || maybeEvent.contains("issue_comment")) {
 
-        val maybeAction = (request.body \ "action").asOpt[String]
+        // Check if repository is public - only process webhooks for public repositories
+        val isPrivate = (request.body \ "repository" \ "private").asOpt[Boolean]
+          .orElse((request.body \ "pull_request" \ "base" \ "repo" \ "private").asOpt[Boolean])
+          .orElse((request.body \ "pull_request" \ "head" \ "repo" \ "private").asOpt[Boolean])
+          .orElse((request.body \ "issue" \ "repository" \ "private").asOpt[Boolean])
+          .getOrElse(false)
 
-        maybeAction.fold {
-          Future.successful {
-            (request.body \ "zen").asOpt[String].fold {
-              BadRequest("Was this a test?  If so, where is your zen?")
-            } { zen =>
-              Ok(zen)
+        if (isPrivate) {
+          Future.successful(Ok("Skipping webhook for private repository"))
+        } else {
+          val maybeAction = (request.body \ "action").asOpt[String]
+
+          maybeAction.fold {
+            Future.successful {
+              (request.body \ "zen").asOpt[String].fold {
+                BadRequest("Was this a test?  If so, where is your zen?")
+              } { zen =>
+                Ok(zen)
+              }
             }
+          } {
+            case "opened" | "reopened" | "synchronize" | "created" | "edited" =>
+              val installationId = (request.body \ "installation" \ "id").as[Int]
+              val handlePullRequestFuture = for {
+                token <- gitHub.installationAccessTokens(installationId).map(_.\("token").as[String])
+                _ <- handlePullRequest(request.body, token)
+              } yield Ok
+
+              handlePullRequestFuture.recover {
+                case e: Exception =>
+                  Logger.error("Error handling pull request", e)
+                  InternalServerError(e.getMessage)
+              }
+            case action: String =>
+              Future.successful(Ok(s"Did nothing for the action = $action"))
           }
-        } {
-          case "opened" | "reopened" | "synchronize" | "created" | "edited" =>
-            val installationId = (request.body \ "installation" \ "id").as[Int]
-            val handlePullRequestFuture = for {
-              token <- gitHub.installationAccessTokens(installationId).map(_.\("token").as[String])
-              _ <- handlePullRequest(request.body, token)
-            } yield Ok
-
-            handlePullRequestFuture.recover {
-              case e: Exception =>
-                Logger.error("Error handling pull request", e)
-                InternalServerError(e.getMessage)
-            }
-          case action: String =>
-            Future.successful(Ok(s"Did nothing for the action = $action"))
         }
       }
       else {
