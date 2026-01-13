@@ -124,5 +124,3 @@ License
 -------------
 
 This repo is licensed under the BSD-3-Clause.
-
-[![FOSSA Status](https://app.fossa.io/api/projects/custom%2B23%2Fgithub.com%2Fsalesforce%2Fdr-cla.svg?type=large)](https://app.fossa.io/projects/custom%2B23%2Fgithub.com%2Fsalesforce%2Fdr-cla?ref=badge_large)
