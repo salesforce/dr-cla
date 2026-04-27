@@ -14,9 +14,13 @@ libraryDependencies ++= Seq(
   ws,
   filters,
 
+  //"com.fasterxml.jackson.core" % "jackson-core"                    % "2.14.3",
+  //"com.fasterxml.jackson.core" % "jackson-annotations"             % "2.14.3",
+  //"com.fasterxml.jackson.core" % "jackson-databind"                % "2.14.3",
   "com.fasterxml.jackson.core" % "jackson-core"                    % "2.18.4",
   "com.fasterxml.jackson.core" % "jackson-annotations"             % "2.18.4",
   "com.fasterxml.jackson.core" % "jackson-databind"                % "2.18.4",
+  
   "org.apache.commons"         % "commons-compress"                % "1.27.1",
   "com.google.guava"           % "guava"                           % "33.3.1-jre",
   "org.bouncycastle"           % "bcprov-jdk18on"                  % "1.79",
