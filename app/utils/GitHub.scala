@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, salesforce.com, inc.
+ * Copyright (c) 2018-2026, Salesforce.com
  * All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  * For full license text, see the LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause
@@ -99,7 +99,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   }
 
   def jwtWs(path: String): (WSRequest, JwtClaim) = {
-    val claim = JwtClaim(issuer = Some(this.integrationId)).issuedNow.expiresIn(60)
+    val claim = JwtClaim(issuer = Some(this.integrationId)).issuedNow(java.time.Clock.systemUTC()).expiresIn(60)(java.time.Clock.systemUTC())
     val jwt = jwtEncode(claim)
 
     val wsRequest = ws.url(s"https://api.github.com/$path")
@@ -122,12 +122,8 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   }
 
   private def fetchPagesWithExtractor(path: String, accessToken: String, pageSize: Int = 100)(extractor: JsValue => JsArray): Future[JsArray] = {
-    import io.netty.handler.codec.http.QueryStringDecoder
-
-    import collection.JavaConverters._
-
     implicit class Regex(sc: StringContext) {
-      def r = new scala.util.matching.Regex(sc.parts.mkString, sc.parts.tail.map(_ => "x"): _*)
+      def r = new scala.util.matching.Regex(sc.parts.mkString, sc.parts.tail.map(_ => "x").toSeq: _*)
     }
 
     def req(path: String, accessToken: String, page: Int, pageSize: Int): Future[WSResponse] = {
@@ -139,9 +135,13 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
       val firstPage = extractor(response.json)
 
       def urlToPage(urlString: String): Int = {
-        val url = new URL(urlString)
-        val params = new QueryStringDecoder(url.toURI.getRawQuery, false).parameters.asScala.mapValues(_.asScala.toSeq).toMap
-        params("page").head.toInt
+        val rawQuery = new URL(urlString).toURI.getRawQuery
+        rawQuery.split("&").flatMap { pair =>
+          pair.split("=", 2) match {
+            case Array(k, v) if k == "page" => Some(java.net.URLDecoder.decode(v, "UTF-8").toInt)
+            case _ => None
+          }
+        }.head
       }
 
       val pages = response.header("Link") match {
@@ -265,7 +265,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   // but actually returns 200 : OK
   def removeLabel(ownerRepo: OwnerRepo, label: Label, issueNumber: Int, accessToken: String): Future[Unit] = {
     val path = s"repos/$ownerRepo/issues/$issueNumber/labels/${label.name}"
-    ws(path, accessToken).delete().flatMap(ok).map(_ => Unit)
+    ws(path, accessToken).delete().flatMap(ok).map(_ => ())
   }
 
   // todo: do not re-apply an existing label
@@ -398,7 +398,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   }
 
   def deleteRepo(ownerRepo: OwnerRepo)(accessToken: String): Future[Unit] = {
-    ws(s"repos/$ownerRepo", accessToken).delete().flatMap(nocontent).map(_ => Unit)
+    ws(s"repos/$ownerRepo", accessToken).delete().flatMap(nocontent).map(_ => ())
   }
 
   def forkRepo(ownerRepo: OwnerRepo)(accessToken: String): Future[JsObject] = {
@@ -498,13 +498,13 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
 
     def integrationAccessTokenToPullRequests(accessToken: String): Future[Map[JsObject, String]] = {
       installationRepositories(accessToken).flatMap { repos =>
-        pullRequestsNeedingValidationForAccessToken(signerGitHubId, repos.value.map(_.as[JsObject]), accessToken)
+        pullRequestsNeedingValidationForAccessToken(signerGitHubId, repos.value.toSeq.map(_.as[JsObject]), accessToken)
       }
     }
 
     for {
       integrations <- integrationInstallations()
-      integrationInstallationIds = integrations.value.map(_.\("id").as[Int])
+      integrationInstallationIds = integrations.value.toSeq.map(_.\("id").as[Int])
       integrationAccessTokens <- integrationTokens(integrationInstallationIds)
       pullRequests <- Future.sequence(integrationAccessTokens.map(integrationAccessTokenToPullRequests))
     } yield pullRequests.flatten.toMap

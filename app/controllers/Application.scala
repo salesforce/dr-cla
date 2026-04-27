@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, salesforce.com, inc.
+ * Copyright (c) 2018-2026, Salesforce.com
  * All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  * For full license text, see the LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause
@@ -10,8 +10,6 @@ package controllers
 import java.time.LocalDateTime
 import java.net.URL
 
-import akka.http.scaladsl.model.Uri
-import akka.http.scaladsl.model.Uri.Query
 import javax.inject.Inject
 /*
 import javax.inject.Singleton
@@ -24,7 +22,7 @@ import play.api.http.HttpErrorHandler
 import play.api.libs.json.{JsArray, JsObject, JsValue, Json}
 import play.api.mvc.Results.EmptyContent
 import play.api.mvc._
-import play.api.{Configuration, Environment, Logger}
+import play.api.{Configuration, Environment, Logging}
 import play.twirl.api.Html
 import utils.{Crypto, DB, GitHub}
 
@@ -38,7 +36,7 @@ class Application @Inject()
   (claSignView: views.html.claSign, claSignedView: views.html.claSigned, claAlreadySignedView: views.html.claAlreadySigned, claStatusView: views.html.claStatus, auditView: views.html.audit, auditReposView: views.html.auditRepos)
   (viewHelper: helpers.ViewHelpers)
   (implicit ec: ExecutionContext)
-  extends InjectedController {
+  extends InjectedController with Logging {
 
   val claVersions = Set("0.0")
   val latestClaVersion = claVersions.head
@@ -142,13 +140,13 @@ class Application @Inject()
         maybePrUrl.fold {
           // do not block on this
           revalidatePullRequests(authInfo.user).failed.foreach { e =>
-            Logger.error("Could not revalidate PRs", e)
+            logger.error("Could not revalidate PRs", e)
           }
 
           Future.unit
         } { prUrl =>
           val (ownerRepo, prNum) = GitHub.pullRequestInfo(prUrl)
-          revalidatePullRequest(ownerRepo, prNum, Some(authInfo)).map(_ => Unit)
+          revalidatePullRequest(ownerRepo, prNum, Some(authInfo)).map(_ => ())
         }
       }
 
@@ -161,7 +159,7 @@ class Application @Inject()
       case AlreadyExistsException(claSignature) =>
         BadRequest(claAlreadySignedView(claSignature.signedOn))
       case e: Throwable =>
-        Logger.error("CLA could not be signed.", e)
+        logger.error("CLA could not be signed.", e)
         val baseErrorMessage = "Could not sign the CLA"
         val errorMessage = maybeOrgEmail.fold(baseErrorMessage) { orgEmail =>
           baseErrorMessage + ", please contact: " + orgEmail
@@ -234,7 +232,7 @@ class Application @Inject()
 
               handlePullRequestFuture.recover {
                 case e: Exception =>
-                  Logger.error("Error handling pull request", e)
+                  logger.error("Error handling pull request", e)
                   InternalServerError(e.getMessage)
               }
             case action: String =>
@@ -272,7 +270,7 @@ class Application @Inject()
   def audit = Action.async { implicit request =>
     getGitHubAuthInfo(request).flatMap { maybeGitHubAuthInfo =>
       maybeGitHubAuthInfo.fold {
-        Future.successful(Redirect(gitHubAppAuthUrl(routes.Application.audit().absoluteURL())))
+        Future.successful(Redirect(gitHubAppAuthUrl(routes.Application.audit.absoluteURL())))
       } { gitHubAuthInfo =>
         val userAccessToken = crypto.decryptAES(gitHubAuthInfo.encAuthToken)
 
@@ -291,16 +289,16 @@ class Application @Inject()
               val repo = repoJson.as[GitHub.OwnerRepo]
 
               org -> repo
-            }.groupBy(_._1).mapValues(_.map(_._2))
+            }.groupBy(_._1).view.mapValues(_.map(_._2).toSeq).toMap
 
             Ok(auditView(orgRepos, gitHub.integrationSlug, gitHubAuthInfo.encAuthToken))
           }
         } recover {
           case irs: GitHub.IncorrectResponseStatus =>
-            Logger.error("Audit Error", irs)
+            logger.error("Audit Error", irs)
             InternalServerError(irs.message)
           case e: Exception =>
-            Logger.error("Audit Error", e)
+            logger.error("Audit Error", e)
             InternalServerError(e.getMessage)
         }
       }
@@ -344,10 +342,10 @@ class Application @Inject()
       Ok(views.html.auditRepo(externalContributorsWithClas, internalContributors))
     } recover {
       case irs: GitHub.IncorrectResponseStatus =>
-        Logger.error("Audit Error", irs)
+        logger.error("Audit Error", irs)
         InternalServerError(irs.message)
       case e: Exception =>
-        Logger.error("Audit Error", e)
+        logger.error("Audit Error", e)
         InternalServerError(e.getMessage)
     }
   }
@@ -460,22 +458,35 @@ class Application @Inject()
       }
     }.recover {
       case e: Exception =>
-        Logger.error(s"Error revalidating pull request $ownerRepo#$prNum", e)
+        logger.error(s"Error revalidating pull request $ownerRepo#$prNum", e)
         (Set.empty[GitHub.Contributor], Set.empty[GitHub.Contributor], Json.obj())
     }
   }
 
   private def gitHubAppAuthUrl(state: String)(implicit request: RequestHeader): String = {
-    val query = Query("client_id" -> gitHub.integrationClientId, "redirect_uri" -> redirectAppUri, "state" -> state)
-    val uri = Uri("https://gitHub.com/login/oauth/authorize")
-    uri.withQuery(query).toString()
+    val params = Seq(
+      "client_id" -> gitHub.integrationClientId,
+      "redirect_uri" -> redirectAppUri,
+      "state" -> state
+    )
+    buildOAuthUrl(params)
   }
 
   private def gitHubAuthUrl(scopes: Seq[String], state: String)(implicit request: RequestHeader): String = {
-    val query = Query("client_id" -> gitHub.clientId, "redirect_uri" -> redirectUri, "scope" -> scopes.mkString(" "), "state" -> state)
-    val uri = Uri("https://gitHub.com/login/oauth/authorize")
+    val params = Seq(
+      "client_id" -> gitHub.clientId,
+      "redirect_uri" -> redirectUri,
+      "scope" -> scopes.mkString(" "),
+      "state" -> state
+    )
+    buildOAuthUrl(params)
+  }
 
-    uri.withQuery(query).toString()
+  private def buildOAuthUrl(params: Seq[(String, String)]): String = {
+    val query = params.map { case (k, v) =>
+      java.net.URLEncoder.encode(k, "UTF-8") + "=" + java.net.URLEncoder.encode(v, "UTF-8")
+    }.mkString("&")
+    "https://github.com/login/oauth/authorize?" + query
   }
 
   private def redirectAppUri(implicit request: RequestHeader): String = {

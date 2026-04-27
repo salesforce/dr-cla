@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2018, salesforce.com, inc.
+ * Copyright (c) 2018-2026, Salesforce.com
  * All rights reserved.
  * SPDX-License-Identifier: BSD-3-Clause
  * For full license text, see the LICENSE.txt file in the repo root or https://opensource.org/licenses/BSD-3-Clause
@@ -33,8 +33,12 @@ class DBSpec extends PlaySpec with GuiceOneAppPerSuite {
   lazy val db = app.injector.instanceOf[DB]
   lazy val playIntializer = app.injector.instanceOf[PlayInitializer]
 
-  Try(await(database.ctx.executeQuery("drop schema salesforce cascade")))
-  Try(await(database.ctx.executeQuery("drop table schema_version")))
+  locally {
+    import database.ctx._
+    import io.getquill.Action
+    Try(await(database.ctx.run(quote { infix"drop schema salesforce cascade".as[Action[Long]] })))
+    Try(await(database.ctx.run(quote { infix"drop table schema_version".as[Action[Long]] })))
+  }
 
   playIntializer.onStart()
 
