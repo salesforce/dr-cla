@@ -366,7 +366,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   }
 
   def integrationInstallations(): Future[JsArray] = {
-    val (ws, _) = jwtWs("integration/installations")
+    val (ws, _) = jwtWs("app/installations")
     ws.get().flatMap(okT[JsArray])
   }
 
