@@ -152,8 +152,13 @@ class Application @Inject()
 
       for {
         (claSignature, authInfo) <- claSignatureFuture
-        persistedClaSignature <- db.createClaSignature(claSignature)
-        validatePullRequestOrRequests <- validatePullRequestOrRequests(claSignature, authInfo)
+        persistedClaSignature <- db.createClaSignature(claSignature).recoverWith {
+          case e: Exception if e.getMessage != null && e.getMessage.contains("duplicate key") =>
+            db.findClaSignaturesByGitHubIds(Set(authInfo.user)).flatMap { sigs =>
+              Future.failed(AlreadyExistsException(sigs.headOption.getOrElse(claSignature)))
+            }
+        }
+        _ <- validatePullRequestOrRequests(claSignature, authInfo)
       } yield Redirect(routes.Application.signedCla(maybePrUrl))
     } recover {
       case AlreadyExistsException(claSignature) =>
