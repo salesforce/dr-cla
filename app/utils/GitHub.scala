@@ -122,16 +122,20 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   }
 
   private def fetchPagesWithExtractor(path: String, accessToken: String, pageSize: Int = 100)(extractor: JsValue => JsArray): Future[JsArray] = {
+    fetchPagesForRequest(ws(path, accessToken), pageSize)(extractor)
+  }
+
+  private def fetchPagesForRequest(request: WSRequest, pageSize: Int = 100)(extractor: JsValue => JsArray): Future[JsArray] = {
     implicit class Regex(sc: StringContext) {
       def r = new scala.util.matching.Regex(sc.parts.mkString, sc.parts.tail.map(_ => "x").toSeq: _*)
     }
 
-    def req(path: String, accessToken: String, page: Int, pageSize: Int): Future[WSResponse] = {
-      ws(path, accessToken).withQueryStringParameters("page" -> page.toString, "per_page" -> pageSize.toString).get().flatMap(ok)
+    def req(page: Int, pageSize: Int): Future[WSResponse] = {
+      request.withQueryStringParameters("page" -> page.toString, "per_page" -> pageSize.toString).get().flatMap(ok)
     }
 
     // get the first page
-    req(path, accessToken, 1, pageSize).flatMap { response =>
+    req(1, pageSize).flatMap { response =>
       val firstPage = extractor(response.json)
 
       def urlToPage(urlString: String): Int = {
@@ -151,7 +155,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
           Range(0, 0)
       }
 
-      val pagesFutures = pages.map(req(path, accessToken, _, pageSize).map(response => extractor(response.json)))
+      val pagesFutures = pages.map(req(_, pageSize).map(response => extractor(response.json)))
 
       // assume numeric paging so we can parallelize
       Future.foldLeft(pagesFutures)(firstPage)(_ ++ _)
@@ -366,8 +370,8 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   }
 
   def integrationInstallations(): Future[JsArray] = {
-    val (ws, _) = jwtWs("app/installations")
-    ws.get().flatMap(okT[JsArray])
+    val (request, _) = jwtWs("app/installations")
+    fetchPagesForRequest(request)(_.as[JsArray])
   }
 
   def userInstallations(accessToken: String): Future[JsArray] = {

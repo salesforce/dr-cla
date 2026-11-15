@@ -19,7 +19,7 @@ import org.apache.commons.codec.digest.HmacUtils
 import org.webjars.WebJarAssetLocator
 import org.webjars.play.WebJarsUtil
 import play.api.http.HttpErrorHandler
-import play.api.libs.json.{JsArray, JsObject, JsValue, Json}
+import play.api.libs.json.{JsArray, JsObject, JsValue}
 import play.api.mvc.Results.EmptyContent
 import play.api.mvc._
 import play.api.{Configuration, Environment, Logging}
@@ -146,7 +146,11 @@ class Application @Inject()
           Future.unit
         } { prUrl =>
           val (ownerRepo, prNum) = GitHub.pullRequestInfo(prUrl)
-          revalidatePullRequest(ownerRepo, prNum, Some(authInfo)).map(_ => ())
+          // the CLA is already signed, so don't fail the request when the pull request can't be revalidated
+          revalidatePullRequest(ownerRepo, prNum, Some(authInfo)).map(_ => ()).recover {
+            case e: Exception =>
+              logger.error(s"Error revalidating pull request $ownerRepo#$prNum", e)
+          }
         }
       }
 
@@ -268,6 +272,9 @@ class Application @Inject()
           Redirect(gitHubAppAuthUrl(routes.Application.status(ownerRepo, prNum).absoluteURL()))
         case irs: GitHub.IncorrectResponseStatus if irs.actualStatusCode == NOT_FOUND =>
           NotFound("Repo Not Found")
+        case e: Exception =>
+          logger.error(s"Error revalidating pull request $ownerRepo#$prNum", e)
+          InternalServerError("The CLA status could not be checked. Please try again later.")
       }
     }
   }
@@ -461,10 +468,6 @@ class Application @Inject()
           }
         }
       }
-    }.recover {
-      case e: Exception =>
-        logger.error(s"Error revalidating pull request $ownerRepo#$prNum", e)
-        (Set.empty[GitHub.Contributor], Set.empty[GitHub.Contributor], Json.obj())
     }
   }
 
