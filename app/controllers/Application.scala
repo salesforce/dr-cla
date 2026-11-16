@@ -421,10 +421,8 @@ class Application @Inject()
   // When someone signs the CLA we don't know what PR we need to update.
   // So get all the PRs we have access to, that have the contributor which just signed the CLA and where the status is failed.
   private def revalidatePullRequests(signerGitHub: GitHub.User)(implicit request: RequestHeader): Future[Iterable[GitHub.ValidationResult]] = {
-    for {
-      pullRequestsToBeValidated <- gitHub.pullRequestsToBeValidated(signerGitHub)
-      validation <- validatePullRequests(pullRequestsToBeValidated)
-    } yield validation
+    // validate each group of installations as it is found, because the installation tokens expire after an hour
+    gitHub.pullRequestsToBeValidatedInBatches(signerGitHub)(pullRequests => validatePullRequests(pullRequests))
   }
 
   private def revalidatePullRequest(ownerRepo: GitHub.OwnerRepo, prNum: Int, maybeGitHubAuthInfo: Option[GitHub.AuthInfo])(implicit request: RequestHeader): Future[GitHub.ValidationResult] = {

@@ -507,9 +507,11 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     (installation \ "suspended_at").asOpt[String].isDefined
   }
 
-  def pullRequestsToBeValidated(signerGitHubId: User): Future[Map[JsObject, String]] = {
+  // Finds the open failing PRs of the signer, working through the installations a few at a time, and hands the
+  // PRs found by each group of installations to `handle` before the next group starts. The access tokens in the
+  // result are only good for an hour, so they are used right after they are minted instead of after a long scan.
+  def pullRequestsToBeValidatedInBatches[T](signerGitHubId: User)(handle: Map[JsObject, String] => Future[Iterable[T]]): Future[Iterable[T]] = {
     // A broken installation (revoked, rate limited, ...) must not stop the others, so failures are logged and skipped.
-    // The token is minted when the installation's turn comes, not up front for all of them.
     def forInstallation(installation: JsObject): Future[Map[JsObject, String]] = {
       val installationId = (installation \ "id").as[Int]
 
@@ -525,15 +527,30 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
       }
     }
 
+    def handleBatch(found: Map[JsObject, String]): Future[Iterable[T]] = {
+      if (found.isEmpty) Future.successful(Seq.empty[T])
+      else handle(found).recover { case e: Exception =>
+        logger.error("Could not revalidate a batch of PRs", e)
+        Seq.empty[T]
+      }
+    }
+
     integrationInstallations().flatMap { installations =>
       val active = installations.value.toSeq.map(_.as[JsObject]).filterNot(isSuspended)
 
-      active.grouped(installationBatchSize).foldLeft(Future.successful(Map.empty[JsObject, String])) { (accumulated, batch) =>
+      active.grouped(installationBatchSize).foldLeft(Future.successful(Vector.empty[T])) { (accumulated, batch) =>
         for {
           soFar <- accumulated
-          results <- Future.sequence(batch.map(forInstallation))
-        } yield results.foldLeft(soFar)(_ ++ _)
+          found <- Future.sequence(batch.map(forInstallation)).map(_.foldLeft(Map.empty[JsObject, String])(_ ++ _))
+          handled <- handleBatch(found)
+        } yield soFar ++ handled
       }
+    }
+  }
+
+  def pullRequestsToBeValidated(signerGitHubId: User): Future[Map[JsObject, String]] = {
+    pullRequestsToBeValidatedInBatches[Map[JsObject, String]](signerGitHubId)(found => Future.successful(Seq(found))).map { batches =>
+      batches.foldLeft(Map.empty[JsObject, String])(_ ++ _)
     }
   }
 
