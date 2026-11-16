@@ -369,9 +369,20 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     (json \ "author" \ "login").asOpt[String].getOrElse((json \ "commit" \ "author" \ "email").as[String])
   }
 
+  // Every installation of the app. Only for callers that really need all of them, since this is one request per 100 installations.
   def integrationInstallations(): Future[JsArray] = {
     val (request, _) = jwtWs("app/installations")
     fetchPagesForRequest(request)(_.as[JsArray])
+  }
+
+  // The installation that covers a single repo, without listing every installation.
+  // GitHub answers 404 when the app is not installed on the repo's owner.
+  def repoInstallation(ownerRepo: OwnerRepo): Future[JsObject] = {
+    val (request, _) = jwtWs(s"repos/$ownerRepo/installation")
+    request.get().flatMap { response =>
+      if (response.status == Status.NOT_FOUND) Future.failed(AppNotInstalled(ownerRepo))
+      else okT[JsObject](response)
+    }
   }
 
   def userInstallations(accessToken: String): Future[JsArray] = {
@@ -827,6 +838,10 @@ object GitHub {
 
   case class IncorrectResponseStatus(expectedStatusCode: Int, actualStatusCode: Int, uri: URI, message: String) extends Exception {
     override def getMessage: String = s"$uri - Expected status code $expectedStatusCode but got $actualStatusCode - $message"
+  }
+
+  case class AppNotInstalled(ownerRepo: OwnerRepo) extends Exception {
+    override def getMessage: String = s"GitHub App not installed on $ownerRepo"
   }
 
   case class InvalidResponseBody(body: String) extends Exception {

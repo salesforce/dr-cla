@@ -562,6 +562,20 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
     }
   }
 
+  "GitHub.repoInstallation" must {
+    "find the installation of a repo without listing every installation" in {
+      val installation = await(gitHub.repoInstallation(testRepo1))
+      (installation \ "id").as[Int] must equal (testIntegrationInstallationId)
+    }
+    "fail with AppNotInstalled when the app is not installed on the owner" in {
+      val notInstalled = OwnerRepo(Owner("octocat"), Repo("Hello-World"))
+      val e = intercept[AppNotInstalled] {
+        await(gitHub.repoInstallation(notInstalled))
+      }
+      e.ownerRepo must equal (notInstalled)
+    }
+  }
+
   // note that ordering is important here because we validate the same PR multiple times
   "GitHub.pullRequestsToBeValidated" must {
     lazy val pullRequest = createTestInternalPullRequest()

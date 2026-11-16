@@ -270,6 +270,8 @@ class Application @Inject()
       } recover {
         case NeedsAuth =>
           Redirect(gitHubAppAuthUrl(routes.Application.status(ownerRepo, prNum).absoluteURL()))
+        case e: GitHub.AppNotInstalled =>
+          NotFound(e.getMessage)
         case irs: GitHub.IncorrectResponseStatus if irs.actualStatusCode == NOT_FOUND =>
           NotFound("Repo Not Found")
         case e: Exception =>
@@ -426,44 +428,38 @@ class Application @Inject()
   }
 
   private def revalidatePullRequest(ownerRepo: GitHub.OwnerRepo, prNum: Int, maybeGitHubAuthInfo: Option[GitHub.AuthInfo])(implicit request: RequestHeader): Future[GitHub.ValidationResult] = {
-    gitHub.integrationInstallations().flatMap { installations =>
-      val maybeOrgInstall = installations.as[Seq[JsObject]].find { repoJson =>
-        repoJson.as[GitHub.Owner] == ownerRepo.owner
-      }
+    gitHub.repoInstallation(ownerRepo).flatMap { orgInstall =>
+      val id = (orgInstall \ "id").as[Int]
+      gitHub.installationAccessTokens(id).flatMap { installationAccessTokenJson =>
+        val installationAccessToken = (installationAccessTokenJson \ "token").as[String]
 
-      maybeOrgInstall.fold(Future.failed[GitHub.ValidationResult](new Exception(s"GitHub App not installed on ${ownerRepo.owner}"))) { orgInstall =>
-        val id = (orgInstall \ "id").as[Int]
-        gitHub.installationAccessTokens(id).flatMap { installationAccessTokenJson =>
-          val installationAccessToken = (installationAccessTokenJson \ "token").as[String]
+        gitHub.installationRepositories(installationAccessToken).flatMap { installationRepositories =>
 
-          gitHub.installationRepositories(installationAccessToken).flatMap { installationRepositories =>
+          val maybeRepo = installationRepositories.value.find { repoJson =>
+            repoJson.asOpt[GitHub.OwnerRepo].contains(ownerRepo)
+          }
 
-            val maybeRepo = installationRepositories.value.find { repoJson =>
-              repoJson.asOpt[GitHub.OwnerRepo].contains(ownerRepo)
+          maybeRepo.fold(Future.failed[GitHub.ValidationResult](new Exception(s"GitHub App not enabled on $ownerRepo"))) { repoJson =>
+            val isPrivate = (repoJson \ "private").as[Boolean]
+
+            def getAndValidatePullRequest(fetchAccessToken: String): Future[GitHub.ValidationResult] = {
+              gitHub.getPullRequest(ownerRepo, prNum, fetchAccessToken).flatMap { pullRequest =>
+                gitHub.pullRequestWithCommitsAndStatus(fetchAccessToken)(pullRequest).flatMap { pullRequestDetails =>
+                  validatePullRequest(pullRequestDetails, installationAccessToken)
+                }
+              }
             }
 
-            maybeRepo.fold(Future.failed[GitHub.ValidationResult](new Exception(s"GitHub App not enabled on $ownerRepo"))) { repoJson =>
-              val isPrivate = (repoJson \ "private").as[Boolean]
-
-              def getAndValidatePullRequest(fetchAccessToken: String): Future[GitHub.ValidationResult] = {
-                gitHub.getPullRequest(ownerRepo, prNum, fetchAccessToken).flatMap { pullRequest =>
-                  gitHub.pullRequestWithCommitsAndStatus(fetchAccessToken)(pullRequest).flatMap { pullRequestDetails =>
-                    validatePullRequest(pullRequestDetails, installationAccessToken)
-                  }
-                }
+            if (isPrivate) {
+              maybeGitHubAuthInfo.fold {
+                Future.failed[GitHub.ValidationResult](NeedsAuth)
+              } { gitHubAuthInfo =>
+                val userAccessToken = crypto.decryptAES(gitHubAuthInfo.encAuthToken)
+                getAndValidatePullRequest(userAccessToken)
               }
-
-              if (isPrivate) {
-                maybeGitHubAuthInfo.fold {
-                  Future.failed[GitHub.ValidationResult](NeedsAuth)
-                } { gitHubAuthInfo =>
-                  val userAccessToken = crypto.decryptAES(gitHubAuthInfo.encAuthToken)
-                  getAndValidatePullRequest(userAccessToken)
-                }
-              }
-              else {
-                getAndValidatePullRequest(installationAccessToken)
-              }
+            }
+            else {
+              getAndValidatePullRequest(installationAccessToken)
             }
           }
         }
