@@ -134,7 +134,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     }
 
     def req(page: Int, pageSize: Int): Future[WSResponse] = {
-      request.withQueryStringParameters("page" -> page.toString, "per_page" -> pageSize.toString).get().flatMap(ok)
+      request.addQueryStringParameters("page" -> page.toString, "per_page" -> pageSize.toString).get().flatMap(ok)
     }
 
     // get the first page
@@ -184,16 +184,12 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     ws(path, accessToken).get().flatMap(okT[JsValue])
   }
 
-  // todo: paging
   def pullRequests(ownerRepo: OwnerRepo, accessToken: String, filterState: Option[String] = None): Future[JsArray] = {
     val path = s"repos/$ownerRepo/pulls"
     val params = filterState.fold(Map.empty[String, String])(state => Map("state" -> state)).toSeq
-    ws(path, accessToken).withQueryStringParameters(params:_*).get().flatMap { response =>
-      response.status match {
-        // sometimes GitHub says we have access to a repo, but it doesn't actually exist
-        case Status.NOT_FOUND => Future.successful(JsArray())
-        case _ => okT[JsArray](response)
-      }
+    fetchPagesForRequest(ws(path, accessToken).addQueryStringParameters(params:_*))(_.as[JsArray]).recover {
+      // sometimes GitHub says we have access to a repo, but it doesn't actually exist
+      case irs: IncorrectResponseStatus if irs.actualStatusCode == Status.NOT_FOUND => JsArray()
     }
   }
 

@@ -245,6 +245,27 @@ class GitHubFakeApiSpec extends PlaySpec with BeforeAndAfterAll {
     }
   }
 
+  "GitHub.pullRequests" must {
+    "follow the Link header to the later pages and keep the state filter on each one" in {
+      val path = "/repos/org/repo/pulls"
+      lazy val fake: FakeGitHub = new FakeGitHub({
+        case Req("GET", `path`, query, _) if !query.contains("state=open") =>
+          Some(Reply(400, Json.obj("message" -> s"missing state in $query")))
+        case req => twoPages(path, Json.obj("number" -> 1), Json.obj("number" -> 2))(fake)(req)
+      })
+
+      try {
+        val pullRequests = await(gitHubFor(fake).pullRequests(OwnerRepo(Owner("org"), Repo("repo")), "tok", Some("open")))
+        pullRequests.value.map(pr => (pr \ "number").as[Int]) must equal (Seq(1, 2))
+      } finally fake.stop()
+    }
+    "answer no pull requests when GitHub says the repo doesn't exist" in {
+      withFake(_ => None) { fake =>
+        await(gitHubFor(fake).pullRequests(OwnerRepo(Owner("org"), Repo("repo")), "tok", Some("open"))) must equal (JsArray())
+      }
+    }
+  }
+
   // Installations 1..6. 2 is suspended, 3 refuses to hand out a token, 1, 4 and 6 have a failing PR of the signer.
   val signer = User("signer")
   val suspendedIds = Set(2)
