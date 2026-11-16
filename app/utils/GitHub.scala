@@ -19,7 +19,7 @@ import org.bouncycastle.openssl.jcajce.JcaPEMKeyConverter
 import org.bouncycastle.openssl.{PEMKeyPair, PEMParser}
 import pdi.jwt.JwtJson._
 import pdi.jwt.{JwtAlgorithm, JwtClaim, JwtJson}
-import play.api.Configuration
+import play.api.{Configuration, Logging}
 import play.api.http.{HeaderNames, HttpVerbs, MimeTypes, Status}
 import play.api.i18n.{Lang, MessagesApi}
 import play.api.libs.functional.syntax._
@@ -32,7 +32,7 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.language.implicitConversions
 import scala.util.Try
 
-class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi: MessagesApi) (implicit ec: ExecutionContext) {
+class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi: MessagesApi) (implicit ec: ExecutionContext) extends Logging {
 
   import GitHub._
 
@@ -489,29 +489,41 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     }.toMap
   }
 
+  // how many installations are worked on at once
+  private val installationBatchSize = 4
+
+  private def isSuspended(installation: JsObject): Boolean = {
+    (installation \ "suspended_at").asOpt[String].isDefined
+  }
+
   def pullRequestsToBeValidated(signerGitHubId: User): Future[Map[JsObject, String]] = {
-    def integrationTokens(integrationInstallationIds: Seq[Int]): Future[Seq[String]] = {
-      Future.sequence {
-        integrationInstallationIds.map { integrationInstallationId =>
-          installationAccessTokens(integrationInstallationId).map { json =>
-            (json \ "token").as[String]
-          }
-        }
+    // A broken installation (revoked, rate limited, ...) must not stop the others, so failures are logged and skipped.
+    // The token is minted when the installation's turn comes, not up front for all of them.
+    def forInstallation(installation: JsObject): Future[Map[JsObject, String]] = {
+      val installationId = (installation \ "id").as[Int]
+
+      val pullRequests = for {
+        accessToken <- installationAccessTokens(installationId).map(json => (json \ "token").as[String])
+        repos <- installationRepositories(accessToken)
+        pullRequests <- pullRequestsNeedingValidationForAccessToken(signerGitHubId, repos.value.toSeq.map(_.as[JsObject]), accessToken)
+      } yield pullRequests
+
+      pullRequests.recover { case e: Exception =>
+        logger.warn(s"Skipping installation $installationId (${installation.asOpt[Owner].fold("unknown owner")(_.toString)}) while revalidating PRs", e)
+        Map.empty[JsObject, String]
       }
     }
 
-    def integrationAccessTokenToPullRequests(accessToken: String): Future[Map[JsObject, String]] = {
-      installationRepositories(accessToken).flatMap { repos =>
-        pullRequestsNeedingValidationForAccessToken(signerGitHubId, repos.value.toSeq.map(_.as[JsObject]), accessToken)
+    integrationInstallations().flatMap { installations =>
+      val active = installations.value.toSeq.map(_.as[JsObject]).filterNot(isSuspended)
+
+      active.grouped(installationBatchSize).foldLeft(Future.successful(Map.empty[JsObject, String])) { (accumulated, batch) =>
+        for {
+          soFar <- accumulated
+          results <- Future.sequence(batch.map(forInstallation))
+        } yield results.foldLeft(soFar)(_ ++ _)
       }
     }
-
-    for {
-      integrations <- integrationInstallations()
-      integrationInstallationIds = integrations.value.toSeq.map(_.\("id").as[Int])
-      integrationAccessTokens <- integrationTokens(integrationInstallationIds)
-      pullRequests <- Future.sequence(integrationAccessTokens.map(integrationAccessTokenToPullRequests))
-    } yield pullRequests.flatten.toMap
   }
 
   def pullRequestUserCommitters(ownerRepo: OwnerRepo, prNumber: Int, sha: String, accessToken: String): Future[Set[Contributor]] = {
