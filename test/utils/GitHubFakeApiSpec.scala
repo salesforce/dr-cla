@@ -213,6 +213,38 @@ class GitHubFakeApiSpec extends PlaySpec with BeforeAndAfterAll {
     }
   }
 
+  // A list endpoint that answers with one item per page, across two pages
+  def twoPages(path: String, first: JsObject, second: JsObject)(fake: => FakeGitHub): Req => Option[Reply] = {
+    case Req("GET", `path`, query, _) if query.contains("page=2") =>
+      Some(Reply(200, Json.arr(second)))
+    case Req("GET", `path`, _, _) =>
+      val link = s"""<${fake.url}$path?per_page=100&page=2>; rel="next", <${fake.url}$path?per_page=100&page=2>; rel="last""""
+      Some(Reply(200, Json.arr(first), Seq("Link" -> link)))
+    case _ => None
+  }
+
+  "GitHub.pullRequestCommits" must {
+    "follow the Link header to the later pages" in {
+      lazy val fake: FakeGitHub = new FakeGitHub(twoPages("/repos/org/repo/pulls/1/commits", Json.obj("sha" -> "a"), Json.obj("sha" -> "b"))(fake))
+
+      try {
+        val commits = await(gitHubFor(fake).pullRequestCommits(OwnerRepo(Owner("org"), Repo("repo")), 1, "tok"))
+        commits.value.map(c => (c \ "sha").as[String]) must equal (Seq("a", "b"))
+      } finally fake.stop()
+    }
+  }
+
+  "GitHub.issueComments" must {
+    "follow the Link header to the later pages" in {
+      lazy val fake: FakeGitHub = new FakeGitHub(twoPages("/repos/org/repo/issues/1/comments", Json.obj("body" -> "a"), Json.obj("body" -> "b"))(fake))
+
+      try {
+        val comments = await(gitHubFor(fake).issueComments(OwnerRepo(Owner("org"), Repo("repo")), 1, "tok"))
+        comments.value.map(c => (c \ "body").as[String]) must equal (Seq("a", "b"))
+      } finally fake.stop()
+    }
+  }
+
   // Installations 1..6. 2 is suspended, 3 refuses to hand out a token, 1, 4 and 6 have a failing PR of the signer.
   val signer = User("signer")
   val suspendedIds = Set(2)

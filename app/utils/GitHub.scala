@@ -213,7 +213,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
   def pullRequestCommits(ownerRepo: OwnerRepo, pullRequestNum: Int, accessToken: String): Future[JsArray] = {
     val path = s"repos/$ownerRepo/pulls/$pullRequestNum/commits"
 
-    ws(path, accessToken).get().flatMap(okT[JsArray])
+    fetchPages(path, accessToken)
   }
 
   def commentOnIssue(ownerRepo: OwnerRepo, issueNumber: Int, body: String, accessToken: String): Future[JsValue] = {
@@ -232,7 +232,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
 
   def issueComments(ownerRepo: OwnerRepo, issueNumber: Int, accessToken: String): Future[JsArray] = {
     val path = s"repos/$ownerRepo/issues/$issueNumber/comments"
-    ws(path, accessToken).get().flatMap(okT[JsArray])
+    fetchPages(path, accessToken)
   }
 
   def updateLabel(ownerRepo: OwnerRepo, label: Label, accessToken: String): Future[JsValue] = {
