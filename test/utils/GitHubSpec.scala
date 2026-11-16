@@ -563,7 +563,7 @@ class GitHubSpec extends PlaySpec with BeforeAndAfterAll {
   }
 
   "GitHub.repoInstallation" must {
-    "find the installation of a repo without listing every installation" in {
+    "find the installation of a repo" in {
       val installation = await(gitHub.repoInstallation(testRepo1))
       (installation \ "id").as[Int] must equal (testIntegrationInstallationId)
     }

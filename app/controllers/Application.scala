@@ -433,34 +433,29 @@ class Application @Inject()
       gitHub.installationAccessTokens(id).flatMap { installationAccessTokenJson =>
         val installationAccessToken = (installationAccessTokenJson \ "token").as[String]
 
-        gitHub.installationRepositories(installationAccessToken).flatMap { installationRepositories =>
+        // repoInstallation only succeeds for a repo this installation can reach, so there is no
+        // need to list the installation's repos to check that. GitHub ignores case in the name.
+        gitHub.repo(ownerRepo)(installationAccessToken).flatMap { repoJson =>
+          val isPrivate = (repoJson \ "private").as[Boolean]
 
-          val maybeRepo = installationRepositories.value.find { repoJson =>
-            repoJson.asOpt[GitHub.OwnerRepo].contains(ownerRepo)
+          def getAndValidatePullRequest(fetchAccessToken: String): Future[GitHub.ValidationResult] = {
+            gitHub.getPullRequest(ownerRepo, prNum, fetchAccessToken).flatMap { pullRequest =>
+              gitHub.pullRequestWithCommitsAndStatus(fetchAccessToken)(pullRequest).flatMap { pullRequestDetails =>
+                validatePullRequest(pullRequestDetails, installationAccessToken)
+              }
+            }
           }
 
-          maybeRepo.fold(Future.failed[GitHub.ValidationResult](new Exception(s"GitHub App not enabled on $ownerRepo"))) { repoJson =>
-            val isPrivate = (repoJson \ "private").as[Boolean]
-
-            def getAndValidatePullRequest(fetchAccessToken: String): Future[GitHub.ValidationResult] = {
-              gitHub.getPullRequest(ownerRepo, prNum, fetchAccessToken).flatMap { pullRequest =>
-                gitHub.pullRequestWithCommitsAndStatus(fetchAccessToken)(pullRequest).flatMap { pullRequestDetails =>
-                  validatePullRequest(pullRequestDetails, installationAccessToken)
-                }
-              }
+          if (isPrivate) {
+            maybeGitHubAuthInfo.fold {
+              Future.failed[GitHub.ValidationResult](NeedsAuth)
+            } { gitHubAuthInfo =>
+              val userAccessToken = crypto.decryptAES(gitHubAuthInfo.encAuthToken)
+              getAndValidatePullRequest(userAccessToken)
             }
-
-            if (isPrivate) {
-              maybeGitHubAuthInfo.fold {
-                Future.failed[GitHub.ValidationResult](NeedsAuth)
-              } { gitHubAuthInfo =>
-                val userAccessToken = crypto.decryptAES(gitHubAuthInfo.encAuthToken)
-                getAndValidatePullRequest(userAccessToken)
-              }
-            }
-            else {
-              getAndValidatePullRequest(installationAccessToken)
-            }
+          }
+          else {
+            getAndValidatePullRequest(installationAccessToken)
           }
         }
       }
