@@ -67,9 +67,12 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
 
   val maybeIntegrationSecretToken = configuration.getOptional[String]("github.integration.secret-token")
 
+  // only changed by tests, which point it at a fake GitHub
+  private val apiUrl = configuration.getOptional[String]("github.api-url").getOrElse("https://api.github.com")
+
   def ws(path: String, accessToken: String): WSRequest = {
     ws
-      .url(s"https://api.github.com/$path")
+      .url(s"$apiUrl/$path")
       .withHttpHeaders(
         HeaderNames.AUTHORIZATION -> s"token $accessToken",
         HeaderNames.ACCEPT -> "application/vnd.github.machine-man-preview+json"
@@ -102,7 +105,7 @@ class GitHub @Inject() (configuration: Configuration, ws: WSClient, messagesApi:
     val claim = JwtClaim(issuer = Some(this.integrationId)).issuedNow(java.time.Clock.systemUTC()).expiresIn(60)(java.time.Clock.systemUTC())
     val jwt = jwtEncode(claim)
 
-    val wsRequest = ws.url(s"https://api.github.com/$path")
+    val wsRequest = ws.url(s"$apiUrl/$path")
       .withHttpHeaders(
         HeaderNames.AUTHORIZATION -> s"Bearer $jwt",
         HeaderNames.ACCEPT -> "application/vnd.github.machine-man-preview+json"
